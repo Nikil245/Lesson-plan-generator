@@ -1,0 +1,12 @@
+# Exclude local build artifacts, dependencies, and env files from Docker build context
+node_modules/
+dist/
+dist-ssr/
+.env
+.env.*
+*.log
+.git/
+.gitignore
+.vscode/
+.idea/
+

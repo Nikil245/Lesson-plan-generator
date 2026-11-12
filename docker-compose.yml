@@ -1,0 +1,54 @@
+# =============================================================================
+# Lessonwright Docker Compose (Production / Standard Stack)
+# Run with:  docker compose up --build
+# =============================================================================
+
+services:
+  backend:
+    build:
+      context: ./backend
+      args:
+        EMBEDDING_MODEL: ${EMBEDDING_MODEL:-BAAI/bge-small-en-v1.5}
+    env_file:
+      - ./backend/.env
+    environment:
+      # Point ChromaDB and source documents at the mounted container paths
+      CHROMA_DIR: /app/chroma_db
+      SOURCES_DIR: /app/data/sources
+      FRONTEND_ORIGIN: ${FRONTEND_ORIGIN:-http://localhost:5173}
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    volumes:
+      # Named volume so the Chroma vector index persists across image rebuilds
+      - chroma_db:/app/chroma_db
+      # Bind mount so new PDFs/notes added on the host are visible without rebuilding
+      - ./backend/data/sources:/app/data/sources
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_BASE: ${VITE_API_BASE:-/api}
+    ports:
+      - "${FRONTEND_PORT:-5173}:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  chroma_db:
+

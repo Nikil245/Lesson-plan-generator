@@ -1,0 +1,1 @@
+{"root":["./src/App.tsx","./src/main.tsx","./src/vite-env.d.ts","./src/api/client.ts","./src/components/ChatPanel.tsx","./src/components/CitationPopover.tsx","./src/components/CitationText.tsx","./src/components/SourcesPanel.tsx","./src/components/StudioPanel.tsx","./src/components/TopBar.tsx"],"version":"5.9.3"}

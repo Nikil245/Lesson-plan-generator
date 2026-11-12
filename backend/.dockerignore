@@ -1,0 +1,15 @@
+# Never bake secrets, virtualenvs, local vector DB, or source PDFs into the image
+.env
+.env.*
+!.env.example
+venv/
+.venv/
+chroma_db/
+data/sources/
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.git/
+.gitignore
+
