@@ -1,0 +1,17 @@
+{
+  "2005.14165v4.pdf": {
+    "title": "Language Models are Few-Shot Learners (GPT-3)",
+    "url": "https://arxiv.org/abs/2005.14165",
+    "topic": "few-shot prompting"
+  },
+  "2201.11903v6.pdf": {
+    "title": "Chain-of-Thought Prompting Elicits Reasoning in Large Language Models",
+    "url": "https://arxiv.org/abs/2201.11903",
+    "topic": "chain-of-thought"
+  },
+  "2210.03629v3.pdf": {
+    "title": "ReAct: Synergizing Reasoning and Acting in Language Models",
+    "url": "https://arxiv.org/abs/2210.03629",
+    "topic": "agents and tool use"
+  }
+}

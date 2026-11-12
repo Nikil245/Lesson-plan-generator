@@ -1,0 +1,19 @@
+# --- Web API ---
+fastapi>=0.110
+uvicorn[standard]>=0.29
+python-multipart>=0.0.9      # needed for file uploads (POST /ingest)
+python-dotenv>=1.0           # loads variables from .env
+
+# --- Data validation ---
+pydantic>=2.6
+
+# --- RAG pipeline (used from step 2 onwards) ---
+chromadb>=0.5                # persistent local vector database
+sentence-transformers>=2.7   # local embedding model (bge-small / MiniLM)
+pypdf>=4.2                   # PDF text extraction
+
+# --- LLM generation (used from step 4 onwards) ---
+groq>=0.9                    # official Groq Python SDK
+httpx>=0.27                  # HTTP client used by tests/chat_test.py
+
+

@@ -1,0 +1,2 @@
+"""Lessonwright backend package."""
+

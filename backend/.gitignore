@@ -1,0 +1,18 @@
+# Secrets
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+
+# Local vector database (rebuilt by running ingestion)
+chroma_db/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+

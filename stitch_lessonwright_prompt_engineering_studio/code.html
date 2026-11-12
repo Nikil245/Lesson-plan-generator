@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<meta content="web_standard" name="shell-type"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<style>
+    @layer base {
+      html, body {
+        margin: 0;
+        padding: 0;
+        font-family: 'Geist', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        background-color: #F5F6F8;
+      }
+      body {
+        overscroll-behavior: none;
+      }
+    }
+    ::-webkit-scrollbar {
+      display: none;
+    }
+  </style>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+</head>
+<body class="bg-[#F5F6F8] text-[#111827] min-h-screen antialiased flex flex-col">
+<!-- ========================================== -->
+<!-- TOP BAR                                    -->
+<!-- ========================================== -->
+<header class="h-14 sm:h-16 w-full px-4 flex items-center justify-between flex-shrink-0 bg-transparent">
+<!-- Left branding & editable title -->
+<div class="flex items-center gap-3">
+<div class="flex items-center gap-2">
+<div class="w-8 h-8 rounded-lg flex items-center justify-center text-[#0D9488] bg-[#E6F4F2]">
+<span class="material-symbols-outlined text-[20px]">auto_stories</span>
+</div>
+<span class="text-[15px] font-semibold text-[#111827] tracking-tight">Lessonwright</span>
+</div>
+<span class="text-[#9CA3AF] text-[15px] font-normal">/</span>
+<div class="flex items-center gap-1.5 px-2 py-1 rounded hover:bg-[#EAECEF] transition-colors cursor-pointer group">
+<input class="bg-transparent border-0 text-[14px] font-medium text-[#111827] focus:outline-none w-32 sm:w-44 cursor-pointer focus:cursor-text p-0" spellcheck="false" type="text" value="Untitled lesson"/>
+<span class="material-symbols-outlined text-[#6B7280] group-hover:text-[#111827] text-[15px]">edit</span>
+</div>
+</div>
+<!-- Right utility controls -->
+<div class="flex items-center gap-2.5">
+<button class="px-3.5 py-1.5 rounded-full text-[14px] font-medium text-[#111827] hover:bg-[#EAECEF] transition-colors flex items-center gap-1.5" type="button">
+<span class="material-symbols-outlined text-[#6B7280] text-[18px]">add</span>
+<span>New lesson</span>
+</button>
+<button class="px-4 py-1.5 rounded-full bg-[#0D9488] hover:bg-[#0B7A6F] text-white text-[14px] font-medium transition-colors flex items-center gap-1.5" type="button">
+<span class="material-symbols-outlined text-[17px]">ios_share</span>
+<span>Share</span>
+</button>
+<button aria-label="Settings" class="w-8 h-8 rounded-full flex items-center justify-center text-[#6B7280] hover:text-[#111827] hover:bg-[#EAECEF] transition-colors ml-0.5" type="button">
+<span class="material-symbols-outlined text-[19px]">settings</span>
+</button>
+<div class="w-8 h-8 rounded-full bg-[#E5E7EB] border border-[#D1D5DB] flex items-center justify-center text-[#4B5563] text-[13px] font-medium select-none ml-1">
+        LW
+      </div>
+</div>
+</header>
+<!-- ========================================== -->
+<!-- MAIN 3-PANEL WORKSPACE                     -->
+<!-- ========================================== -->
+<main class="flex-1 w-full px-3 pb-3 pt-0 box-border overflow-hidden">
+<div class="flex flex-row w-full gap-3 items-stretch overflow-hidden" style="height: calc(100vh - 76px);">
+<!-- ========================================== -->
+<!-- 1. LEFT PANEL: SOURCES (320px)            -->
+<!-- ========================================== -->
+<aside class="w-[320px] flex-shrink-0 flex flex-col p-6 rounded-[16px] bg-white border border-[#E4E6EB] select-none justify-between overflow-hidden">
+<div>
+<!-- Header -->
+<div class="flex items-center justify-between mb-5">
+<span class="text-[18px] font-semibold text-[#111827] tracking-tight">Sources</span>
+<button aria-label="Collapse panel" class="w-7 h-7 rounded-md flex items-center justify-center text-[#6B7280] hover:text-[#111827] hover:bg-[#F7F8FA] transition-colors border border-transparent hover:border-[#E4E6EB]" type="button">
+<span class="material-symbols-outlined text-[18px]">dock_to_left</span>
+</button>
+</div>
+<!-- Action Buttons -->
+<div class="grid grid-cols-2 gap-2 mb-4">
+<button class="flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg text-[13px] font-medium text-[#111827] bg-white border border-[#E4E6EB] hover:bg-[#F7F8FA] transition-colors" type="button">
+<span class="material-symbols-outlined text-[16px] text-[#6B7280]">add</span>
+<span>Add sources</span>
+</button>
+<button class="flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg text-[13px] font-medium text-[#111827] bg-white border border-[#E4E6EB] hover:bg-[#F7F8FA] transition-colors" type="button">
+<span class="material-symbols-outlined text-[16px] text-[#6B7280]">edit_note</span>
+<span>Create note</span>
+</button>
+</div>
+<!-- Search Container & Filter Chips -->
+<div class="flex flex-col gap-2.5 mb-4">
+<div class="flex items-center rounded-lg bg-[#F7F8FA] border border-[#E4E6EB] px-3 py-2 focus-within:border-[#0D9488] focus-within:bg-white transition-colors">
+<span class="material-symbols-outlined text-[18px] text-[#6B7280] mr-2">search</span>
+<input class="bg-transparent border-0 text-[13px] text-[#111827] placeholder-[#6B7280] focus:outline-none flex-1 min-w-0" placeholder="Search the web for new sources" type="text"/>
+</div>
+<div class="flex items-center gap-1.5">
+<button class="flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#F7F8FA] text-[#6B7280] hover:text-[#111827] border border-[#E4E6EB] text-[12px] font-medium transition-colors" type="button">
+<span>Web</span>
+<span class="material-symbols-outlined text-[13px]">expand_more</span>
+</button>
+<button class="flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#F7F8FA] text-[#6B7280] hover:text-[#111827] border border-[#E4E6EB] text-[12px] font-medium transition-colors" type="button">
+<span>Fast research</span>
+<span class="material-symbols-outlined text-[13px]">expand_more</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Empty State -->
+<div class="flex-1 flex flex-col justify-center items-center text-center px-2 py-6 border border-dashed border-[#E4E6EB] rounded-xl bg-[#F7F8FA]/60">
+<div class="w-10 h-10 rounded-full flex items-center justify-center text-[#6B7280] mb-3 bg-white border border-[#E4E6EB]">
+<span class="material-symbols-outlined text-[20px]">description</span>
+</div>
+<h4 class="text-[14px] font-semibold text-[#111827] tracking-tight mb-1">Saved sources will appear here</h4>
+<p class="text-[12px] leading-relaxed text-[#6B7280] mb-3 max-w-[210px]">
+            Add papers, guides, slides or notes to ground your lesson.
+          </p>
+<button class="text-[13px] font-medium text-[#0D9488] hover:text-[#0B7A6F] hover:underline" type="button">
+            Add a source
+          </button>
+</div>
+</aside>
+<!-- ========================================== -->
+<!-- 2. CENTER PANEL: CHAT (flex-1)             -->
+<!-- ========================================== -->
+<section class="flex-1 flex flex-col p-6 rounded-[16px] bg-white border border-[#E4E6EB] relative overflow-hidden justify-between">
+<div class="w-full max-w-[720px] mx-auto flex flex-col justify-between h-full">
+<!-- Welcome Hero Section -->
+<div class="flex flex-col items-center text-center mt-auto mb-auto px-4">
+<div class="w-10 h-10 rounded-xl flex items-center justify-center mb-3 bg-[#F7F8FA] border border-[#E4E6EB] text-[#6B7280]">
+<span class="material-symbols-outlined text-[20px]">school</span>
+</div>
+<h1 class="text-[26px] sm:text-[28px] font-semibold tracking-tight text-[#111827]">
+              What are we teaching?
+            </h1>
+<p class="text-[14px] sm:text-[15px] leading-relaxed text-[#6B7280] mt-2 max-w-[460px]">
+              Add your sources, then describe your class. I'll build a cited lesson plan from them.
+            </p>
+<!-- 3 Suggestion Cards (Full titles without truncation) -->
+<div class="grid grid-cols-1 sm:grid-cols-3 gap-3 w-full mt-7">
+<button class="flex items-center justify-between p-4 rounded-xl bg-white border border-[#E4E6EB] hover:border-gray-400 text-left transition-colors group" type="button">
+<span class="text-[13px] font-medium text-[#111827]">Plan a new lesson</span>
+<span class="material-symbols-outlined text-[16px] text-[#6B7280] group-hover:text-[#111827] group-hover:translate-x-0.5 transition-all ml-2 flex-shrink-0">arrow_forward</span>
+</button>
+<button class="flex items-center justify-between p-4 rounded-xl bg-white border border-[#E4E6EB] hover:border-gray-400 text-left transition-colors group" type="button">
+<span class="text-[13px] font-medium text-[#111827]">Build a quiz from my sources</span>
+<span class="material-symbols-outlined text-[16px] text-[#6B7280] group-hover:text-[#111827] group-hover:translate-x-0.5 transition-all ml-2 flex-shrink-0">arrow_forward</span>
+</button>
+<button class="flex items-center justify-between p-4 rounded-xl bg-white border border-[#E4E6EB] hover:border-gray-400 text-left transition-colors group" type="button">
+<span class="text-[13px] font-medium text-[#111827]">Adapt an existing lesson</span>
+<span class="material-symbols-outlined text-[16px] text-[#6B7280] group-hover:text-[#111827] group-hover:translate-x-0.5 transition-all ml-2 flex-shrink-0">arrow_forward</span>
+</button>
+</div>
+</div>
+<!-- Bottom Composer Section -->
+<div class="w-full flex flex-col gap-2 mt-auto">
+<!-- Parameter Chips Row -->
+<div class="flex items-center gap-2 overflow-x-auto pb-1">
+<button class="flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#F7F8FA] border border-[#E4E6EB] hover:border-gray-400 text-[12px] font-medium text-[#6B7280] hover:text-[#111827] transition-colors" type="button">
+<span>Level: Beginner</span>
+<span class="material-symbols-outlined text-[13px]">expand_more</span>
+</button>
+<button class="flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#F7F8FA] border border-[#E4E6EB] hover:border-gray-400 text-[12px] font-medium text-[#6B7280] hover:text-[#111827] transition-colors" type="button">
+<span>Duration: 60 min</span>
+<span class="material-symbols-outlined text-[13px]">expand_more</span>
+</button>
+<button class="flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#F7F8FA] border border-[#E4E6EB] hover:border-gray-400 text-[12px] font-medium text-[#6B7280] hover:text-[#111827] transition-colors" type="button">
+<span>Audience: All</span>
+<span class="material-symbols-outlined text-[13px]">expand_more</span>
+</button>
+</div>
+<!-- Floating Composer Container -->
+<div class="rounded-[16px] bg-white border border-[#E4E6EB] p-3.5 focus-within:border-[#0D9488] transition-colors flex flex-col gap-2">
+<div class="flex items-start gap-2.5">
+<button aria-label="Prompt Parameters" class="p-1 rounded-md text-[#6B7280] hover:text-[#111827] hover:bg-[#F7F8FA] transition-colors mt-0.5" type="button">
+<span class="material-symbols-outlined text-[18px]">tune</span>
+</button>
+<textarea class="w-full bg-transparent border-0 text-[14px] text-[#111827] placeholder-[#6B7280] focus:outline-none resize-none leading-relaxed p-0" placeholder="Ask a question or describe your class..." rows="2"></textarea>
+</div>
+<!-- Bottom Toolbar inside composer -->
+<div class="flex items-center justify-between pt-2 border-t border-[#E4E6EB]/80">
+<div class="flex items-center">
+<span class="inline-flex items-center px-2.5 py-0.5 rounded-full bg-[#F3F4F6] text-[12px] font-medium text-[#6B7280]">
+                    0 sources
+                  </span>
+</div>
+<div class="flex items-center gap-2">
+<button aria-label="Attach File" class="w-7 h-7 rounded-full flex items-center justify-center text-[#6B7280] hover:text-[#111827] hover:bg-[#F7F8FA] transition-colors" type="button">
+<span class="material-symbols-outlined text-[18px]">attach_file</span>
+</button>
+<button aria-label="Send message" class="w-7 h-7 rounded-full bg-[#0D9488] hover:bg-[#0B7A6F] text-white flex items-center justify-center transition-colors" type="button">
+<span class="material-symbols-outlined text-[15px]">arrow_upward</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Disclaimer -->
+<p class="text-center text-[12px] text-[#6B7280] mt-1">
+              Lessonwright can make mistakes, so double-check against the sources.
+            </p>
+</div>
+</div>
+</section>
+<!-- ========================================== -->
+<!-- 3. RIGHT PANEL: STUDIO (360px)             -->
+<!-- ========================================== -->
+<aside class="w-[360px] flex-shrink-0 flex flex-col p-6 rounded-[16px] bg-white border border-[#E4E6EB] select-none justify-between overflow-hidden">
+<div>
+<!-- Header -->
+<div class="flex items-center justify-between mb-5">
+<span class="text-[18px] font-semibold text-[#111827] tracking-tight">Studio</span>
+<button aria-label="Collapse panel" class="w-7 h-7 rounded-md flex items-center justify-center text-[#6B7280] hover:text-[#111827] hover:bg-[#F7F8FA] transition-colors border border-transparent hover:border-[#E4E6EB]" type="button">
+<span class="material-symbols-outlined text-[18px]">dock_to_right</span>
+</button>
+</div>
+<!-- 2-Column Grid of 8 Tool Tiles -->
+<div class="grid grid-cols-2 gap-2.5">
+<!-- 1. Lesson plan -->
+<div class="flex items-center gap-3 p-3.5 rounded-[12px] bg-white border border-[#E4E6EB] hover:bg-[#F7F8FA] cursor-pointer transition-colors">
+<span class="material-symbols-outlined text-[18px] text-[#6B7280]">description</span>
+<span class="text-[14px] font-medium text-[#111827]">Lesson plan</span>
+</div>
+<!-- 2. Quiz -->
+<div class="flex items-center gap-3 p-3.5 rounded-[12px] bg-white border border-[#E4E6EB] hover:bg-[#F7F8FA] cursor-pointer transition-colors">
+<span class="material-symbols-outlined text-[18px] text-[#6B7280]">fact_check</span>
+<span class="text-[14px] font-medium text-[#111827]">Quiz</span>
+</div>
+<!-- 3. Slide outline -->
+<div class="flex items-center gap-3 p-3.5 rounded-[12px] bg-white border border-[#E4E6EB] hover:bg-[#F7F8FA] cursor-pointer transition-colors">
+<span class="material-symbols-outlined text-[18px] text-[#6B7280]">co_present</span>
+<span class="text-[14px] font-medium text-[#111827]">Slide outline</span>
+</div>
+<!-- 4. Worksheet -->
+<div class="flex items-center gap-3 p-3.5 rounded-[12px] bg-white border border-[#E4E6EB] hover:bg-[#F7F8FA] cursor-pointer transition-colors">
+<span class="material-symbols-outlined text-[18px] text-[#6B7280]">edit</span>
+<span class="text-[14px] font-medium text-[#111827]">Worksheet</span>
+</div>
+<!-- 5. Flashcards -->
+<div class="flex items-center gap-3 p-3.5 rounded-[12px] bg-white border border-[#E4E6EB] hover:bg-[#F7F8FA] cursor-pointer transition-colors">
+<span class="material-symbols-outlined text-[18px] text-[#6B7280]">style</span>
+<span class="text-[14px] font-medium text-[#111827]">Flashcards</span>
+</div>
+<!-- 6. Rubric -->
+<div class="flex items-center gap-3 p-3.5 rounded-[12px] bg-white border border-[#E4E6EB] hover:bg-[#F7F8FA] cursor-pointer transition-colors">
+<span class="material-symbols-outlined text-[18px] text-[#6B7280]">table_chart</span>
+<span class="text-[14px] font-medium text-[#111827]">Rubric</span>
+</div>
+<!-- 7. Mind map -->
+<div class="flex items-center gap-3 p-3.5 rounded-[12px] bg-white border border-[#E4E6EB] hover:bg-[#F7F8FA] cursor-pointer transition-colors">
+<span class="material-symbols-outlined text-[18px] text-[#6B7280]">account_tree</span>
+<span class="text-[14px] font-medium text-[#111827]">Mind map</span>
+</div>
+<!-- 8. Export -->
+<div class="flex items-center gap-3 p-3.5 rounded-[12px] bg-white border border-[#E4E6EB] hover:bg-[#F7F8FA] cursor-pointer transition-colors">
+<span class="material-symbols-outlined text-[18px] text-[#6B7280]">ios_share</span>
+<span class="text-[14px] font-medium text-[#111827]">Export</span>
+</div>
+</div>
+</div>
+<!-- Bottom Empty State -->
+<div class="flex flex-col items-center justify-center p-5 rounded-xl border border-dashed border-[#E4E6EB] bg-[#F7F8FA]/60 text-center">
+<span class="material-symbols-outlined text-[20px] text-[#6B7280] mb-2">auto_fix_high</span>
+<p class="text-[12px] text-[#6B7280]">
+            Generated lessons will be saved here.
+          </p>
+</div>
+</aside>
+</div>
+</main>
+</body></html>
