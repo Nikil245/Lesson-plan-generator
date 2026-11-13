@@ -75,6 +75,59 @@ function savePersistedLayout(autoSaveId: string, layout: Layout): void {
   }
 }
 
+function resolveRestoredPlanState(record: lessonStore.LessonRecord | null): {
+  plan: LessonPlan | null;
+  activePlanId: string | null;
+  sources: SourceItem[];
+} {
+  if (!record) {
+    return { plan: null, activePlanId: null, sources: [] };
+  }
+
+  const msgs = record.messages || [];
+
+  // 1. If activePlanId is saved, try to find that exact message's plan
+  if (record.activePlanId) {
+    const matched = msgs.find(
+      (m) => (m.planId || m.id) === record.activePlanId && m.plan
+    );
+    if (matched && matched.plan) {
+      return {
+        plan: matched.plan,
+        activePlanId: matched.planId || matched.id,
+        sources: matched.sources || [],
+      };
+    }
+  }
+
+  // 2. Otherwise fall back to the latest message with a plan
+  for (let i = msgs.length - 1; i >= 0; i -= 1) {
+    const m = msgs[i];
+    if (m.plan) {
+      return {
+        plan: record.plan ?? m.plan,
+        activePlanId: record.activePlanId || m.planId || m.id,
+        sources: m.sources || [],
+      };
+    }
+  }
+
+  // 3. Fallback if no message has a plan attached
+  let fallbackSources: SourceItem[] = [];
+  for (let i = msgs.length - 1; i >= 0; i -= 1) {
+    if (msgs[i].sources && msgs[i].sources!.length > 0) {
+      fallbackSources = msgs[i].sources!;
+      break;
+    }
+  }
+
+  return {
+    plan: record.plan ?? null,
+    activePlanId: record.activePlanId ?? null,
+    sources: fallbackSources,
+  };
+}
+
 interface WorkspaceDividerProps {
   id: string;
   ariaLabel: string;
@@ -191,9 +244,14 @@ const LessonWorkspace: React.FC = () => {
   );
 
   // Chat & LessonPlan state restored from the lesson record
+  const initialPlanState = useRef(
+    resolveRestoredPlanState(initialRecord)
+  ).current;
+
   const [messages, setMessages] = useState<ChatMessage[]>(() =>
     (initialRecord?.messages || []).map((m) => ({
       ...m,
+      planId: m.plan ? m.planId || m.id : m.planId,
       isStreaming: false,
       currentStatus: null,
     }))
@@ -201,17 +259,15 @@ const LessonWorkspace: React.FC = () => {
   const [isStreaming, setIsStreaming] = useState<boolean>(false);
   const [currentStatus, setCurrentStatus] = useState<string | null>(null);
   const [currentPlan, setCurrentPlan] = useState<LessonPlan | null>(
-    () => initialRecord?.plan ?? null
+    () => initialPlanState.plan
   );
-  const [latestSources, setLatestSources] = useState<SourceItem[]>(() => {
-    const msgs = initialRecord?.messages || [];
-    for (let i = msgs.length - 1; i >= 0; i -= 1) {
-      if (msgs[i].sources && msgs[i].sources!.length > 0) {
-        return msgs[i].sources!;
-      }
-    }
-    return [];
-  });
+  const [activePlanId, setActivePlanId] = useState<string | null>(
+    () => initialPlanState.activePlanId
+  );
+  const [studioScrollSignal, setStudioScrollSignal] = useState<number>(0);
+  const [latestSources, setLatestSources] = useState<SourceItem[]>(
+    () => initialPlanState.sources
+  );
 
   // Request settings restored from the lesson record
   const [settings, setSettings] = useState<ChatSettings>(() => ({
@@ -243,21 +299,25 @@ const LessonWorkspace: React.FC = () => {
     )?.initialPrompt;
 
     if (record) {
+      const restored = resolveRestoredPlanState(record);
       setCreatedAt(record.createdAt || new Date().toISOString());
       setLessonTitle(
-        (record.plan?.title && !record.titleManuallyEdited
-          ? record.plan.title
+        (restored.plan?.title && !record.titleManuallyEdited
+          ? restored.plan.title
           : record.title) || 'Untitled lesson'
       );
       setTitleManuallyEdited(Boolean(record.titleManuallyEdited));
       setMessages(
         (record.messages || []).map((m) => ({
           ...m,
+          planId: m.plan ? m.planId || m.id : m.planId,
           isStreaming: false,
           currentStatus: null,
         }))
       );
-      setCurrentPlan(record.plan ?? null);
+      setCurrentPlan(restored.plan);
+      setActivePlanId(restored.activePlanId);
+      setLatestSources(restored.sources);
       setSettings({
         level: record.settings?.level || 'beginner',
         duration_min: record.settings?.duration_min ?? 60,
@@ -284,6 +344,8 @@ const LessonWorkspace: React.FC = () => {
       setTitleManuallyEdited(false);
       setMessages([]);
       setCurrentPlan(null);
+      setActivePlanId(null);
+      setLatestSources([]);
       setSettings({
         level: 'beginner',
         duration_min: 60,
@@ -325,10 +387,12 @@ const LessonWorkspace: React.FC = () => {
       },
       messages,
       plan: currentPlan,
+      activePlanId,
       initialPrompt: initialDraft || undefined,
       titleManuallyEdited,
     });
   }, [
+    activePlanId,
     createdAt,
     currentPlan,
     initialDraft,
@@ -390,6 +454,9 @@ const LessonWorkspace: React.FC = () => {
     (minTargetPercent = 30) => {
       const group = groupRef.current;
       const panel = studioPanelRef.current;
+      if (panel && panel.isCollapsed()) {
+        panel.expand();
+      }
       if (group) {
         const current = group.getLayout();
         const currentStudio = current.studio ?? 0;
@@ -420,18 +487,45 @@ const LessonWorkspace: React.FC = () => {
     [groupRef, studioPanelRef]
   );
 
+  const handleOpenPlanInStudio = useCallback(
+    (
+      planToOpen: LessonPlan | null | undefined,
+      planId: string,
+      planSources?: SourceItem[]
+    ) => {
+      if (!planToOpen) {
+        console.warn(
+          `[Lessonwright] Plan card (${planId}) has no plan data.`
+        );
+        return;
+      }
+      setCurrentPlan(planToOpen);
+      setActivePlanId(planId);
+      if (planSources && planSources.length > 0) {
+        setLatestSources(planSources);
+      }
+      setSettings((prev) => ({
+        ...prev,
+        level: planToOpen.level || prev.level,
+        duration_min: planToOpen.duration_min || prev.duration_min,
+        audience: planToOpen.audience || prev.audience,
+      }));
+      if (!titleManuallyEdited && planToOpen.title) {
+        setLessonTitle(planToOpen.title);
+      }
+      expandStudioPanel(30);
+      setMobileTab('studio');
+      setStudioScrollSignal((n) => n + 1);
+    },
+    [expandStudioPanel, titleManuallyEdited]
+  );
+
   const resetWorkspaceLayout = useCallback(() => {
     groupRef.current?.setLayout(DEFAULT_LAYOUT);
     setLeftCollapsed(false);
     setRightCollapsed(false);
     savePersistedLayout(WORKSPACE_AUTO_SAVE_ID, DEFAULT_LAYOUT);
   }, [groupRef]);
-
-  // When a "plan" event arrives from /chat, auto-open Studio if collapsed and widen to >= 40%
-  useEffect(() => {
-    if (!currentPlan) return;
-    expandStudioPanel(40);
-  }, [currentPlan, expandStudioPanel]);
 
   // Keep settings.source_ids synchronized with checked sources
   useEffect(() => {
@@ -611,15 +705,17 @@ const LessonWorkspace: React.FC = () => {
             },
             onPlan: (planData) => {
               setCurrentPlan(planData);
+              setActivePlanId(assistantMsgId);
+              setStudioScrollSignal((n) => n + 1);
               if (!titleManuallyEdited && planData.title) {
                 setLessonTitle(planData.title);
               }
-              if (rightCollapsed) {
-                setRightCollapsed(false);
-              }
+              expandStudioPanel(40);
               setMessages((prev) =>
                 prev.map((m) =>
-                  m.id === assistantMsgId ? { ...m, plan: planData } : m
+                  m.id === assistantMsgId
+                    ? { ...m, plan: planData, planId: assistantMsgId }
+                    : m
                 )
               );
             },
@@ -676,9 +772,9 @@ const LessonWorkspace: React.FC = () => {
       }
     },
     [
+      expandStudioPanel,
       isStreaming,
       latestSources,
-      rightCollapsed,
       selectedSourceIds,
       sessionId,
       settings,
@@ -832,7 +928,9 @@ const LessonWorkspace: React.FC = () => {
                   onRetryMessage={handleRetryMessage}
                   onSelectCitation={setActiveCitation}
                   onUploadFiles={handleUploadFiles}
-                  onOpenStudio={() => setMobileTab('studio')}
+                  activePlanId={activePlanId}
+                  activePlan={currentPlan}
+                  onOpenStudio={handleOpenPlanInStudio}
                   initialDraft={initialDraft}
                   onInitialDraftConsumed={handleInitialDraftConsumed}
                 />
@@ -851,6 +949,7 @@ const LessonWorkspace: React.FC = () => {
                   onSelectCitation={setActiveCitation}
                   isCollapsed={false}
                   onToggleCollapse={() => {}}
+                  scrollToTopSignal={studioScrollSignal}
                 />
               </div>
             </div>
@@ -949,9 +1048,9 @@ const LessonWorkspace: React.FC = () => {
                   onRetryMessage={handleRetryMessage}
                   onSelectCitation={setActiveCitation}
                   onUploadFiles={handleUploadFiles}
-                  onOpenStudio={() => {
-                    expandStudioPanel(40);
-                  }}
+                  activePlanId={activePlanId}
+                  activePlan={currentPlan}
+                  onOpenStudio={handleOpenPlanInStudio}
                   initialDraft={initialDraft}
                   onInitialDraftConsumed={handleInitialDraftConsumed}
                 />
@@ -999,6 +1098,7 @@ const LessonWorkspace: React.FC = () => {
                   onSelectCitation={setActiveCitation}
                   isCollapsed={rightCollapsed}
                   onToggleCollapse={collapseStudioPanel}
+                  scrollToTopSignal={studioScrollSignal}
                 />
               </Panel>
             </Group>

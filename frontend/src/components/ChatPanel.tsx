@@ -11,6 +11,7 @@ export interface ChatMessage {
   isStreaming?: boolean;
   sources?: SourceItem[];
   plan?: LessonPlan | null;
+  planId?: string;
   error?: string | null;
   retryPrompt?: string;
 }
@@ -25,7 +26,13 @@ interface ChatPanelProps {
   onRetryMessage: (messageId: string, promptText: string) => void;
   onSelectCitation: (target: ActiveCitationTarget) => void;
   onUploadFiles: (files: FileList | File[]) => Promise<void>;
-  onOpenStudio?: () => void;
+  activePlanId?: string | null;
+  activePlan?: LessonPlan | null;
+  onOpenStudio?: (
+    plan: LessonPlan | null | undefined,
+    planId: string,
+    sources?: SourceItem[]
+  ) => void;
   initialDraft?: string;
   onInitialDraftConsumed?: () => void;
 }
@@ -77,6 +84,8 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
   onRetryMessage,
   onSelectCitation,
   onUploadFiles,
+  activePlanId,
+  activePlan,
   onOpenStudio,
   initialDraft,
   onInitialDraftConsumed,
@@ -149,6 +158,17 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
     onUpdateSettings({
       objectives: settings.objectives.filter((_, i) => i !== index),
     });
+  };
+
+  const handleActivatePlanCard = (msg: ChatMessage) => {
+    const cardPlanId = msg.planId || msg.id;
+    if (!msg.plan) {
+      console.warn(
+        `[Lessonwright] Plan card (${cardPlanId}) has no plan data.`
+      );
+      return;
+    }
+    onOpenStudio?.(msg.plan, cardPlanId, msg.sources);
   };
 
   const currentLevelLabel =
@@ -292,36 +312,71 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
                   ) : null}
 
                   {/* Compact card when a LessonPlan was generated/updated in this turn */}
-                  {msg.plan && (
-                    <div className="mt-1 w-full sm:w-auto max-w-full inline-flex items-center justify-between gap-3 px-3.5 py-2.5 rounded-xl bg-surface-muted border border-border flex-wrap">
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <div className="w-7 h-7 rounded-lg bg-accent-soft text-accent flex items-center justify-center flex-shrink-0">
-                          <span className="material-symbols-outlined text-[16px]">
-                            description
-                          </span>
+                  {(msg.plan || msg.planId) && (() => {
+                    const cardPlanId = msg.planId || msg.id;
+                    if (!msg.plan) {
+                      console.warn(
+                        `[Lessonwright] Plan card (${cardPlanId}) has no plan data.`
+                      );
+                      return null;
+                    }
+                    const isViewing = activePlanId
+                      ? activePlanId === cardPlanId
+                      : activePlan === msg.plan;
+
+                    return (
+                      <div
+                        role="button"
+                        tabIndex={0}
+                        aria-label={`Open plan: ${msg.plan.title} in Studio`}
+                        aria-pressed={isViewing}
+                        onClick={() => handleActivatePlanCard(msg)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            handleActivatePlanCard(msg);
+                          }
+                        }}
+                        className={`mt-1 w-full sm:w-auto max-w-full inline-flex items-center justify-between gap-3 px-3.5 py-2.5 rounded-xl border flex-wrap cursor-pointer transition-colors select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
+                          isViewing
+                            ? 'bg-accent-soft/40 border-accent'
+                            : 'bg-surface-muted border-border hover:border-border-strong'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <div className="w-7 h-7 rounded-lg bg-accent-soft text-accent flex items-center justify-center flex-shrink-0">
+                            <span className="material-symbols-outlined text-[16px]">
+                              description
+                            </span>
+                          </div>
+                          <div className="min-w-0 text-left">
+                            <p className="text-[13px] font-semibold text-ink break-words">
+                              {msg.plan.title}
+                            </p>
+                            <p className="text-[11px] text-ink-muted">
+                              {msg.plan.duration_min} min ·{' '}
+                              {msg.plan.outline.length} sections ·{' '}
+                              {msg.plan.citations.length} citations
+                            </p>
+                          </div>
                         </div>
-                        <div className="min-w-0">
-                          <p className="text-[13px] font-semibold text-ink break-words">
-                            {msg.plan.title}
-                          </p>
-                          <p className="text-[11px] text-ink-muted">
-                            {msg.plan.duration_min} min ·{' '}
-                            {msg.plan.outline.length} sections ·{' '}
-                            {msg.plan.citations.length} citations
-                          </p>
-                        </div>
-                      </div>
-                      {onOpenStudio && (
                         <button
                           type="button"
-                          onClick={onOpenStudio}
-                          className="px-2.5 py-1 rounded-full bg-surface border border-border hover:border-border-strong text-[12px] font-medium text-ink transition-colors flex-shrink-0"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleActivatePlanCard(msg);
+                          }}
+                          className={`px-2.5 py-1 rounded-full border text-[12px] font-medium transition-colors flex-shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
+                            isViewing
+                              ? 'bg-accent text-white border-accent'
+                              : 'bg-surface border-border hover:border-border-strong text-ink'
+                          }`}
                         >
-                          Open in Studio
+                          {isViewing ? 'Viewing' : 'Open in Studio'}
                         </button>
-                      )}
-                    </div>
-                  )}
+                      </div>
+                    );
+                  })()}
 
                   {/* Error State ("Couldn't reach the server. Retry") */}
                   {msg.error && (

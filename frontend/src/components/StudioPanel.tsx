@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   LessonPlan,
   lessonPlanToMarkdown,
@@ -16,6 +16,7 @@ interface StudioPanelProps {
   onSelectCitation: (target: ActiveCitationTarget) => void;
   isCollapsed: boolean;
   onToggleCollapse: () => void;
+  scrollToTopSignal?: number;
 }
 
 const QUICK_ACTIONS = ['Make it more hands-on', 'Add a quiz', 'Simplify'];
@@ -67,18 +68,39 @@ export const StudioPanel: React.FC<StudioPanelProps> = ({
   onSendQuickAction,
   onSelectCitation,
   onToggleCollapse,
+  scrollToTopSignal,
 }) => {
   const [checkedObjectives, setCheckedObjectives] = useState<Record<number, boolean>>({});
   const [copiedPromptIdx, setCopiedPromptIdx] = useState<number | null>(null);
   const [showToolsGrid, setShowToolsGrid] = useState(false);
+  const asideRef = useRef<HTMLElement>(null);
+  const documentScrollRef = useRef<HTMLDivElement>(null);
 
-  // Whenever a new plan arrives, switch automatically to the document view
+  // Whenever a plan is selected or a new plan arrives, switch to the document view and scroll to top
   useEffect(() => {
     if (plan) {
       setShowToolsGrid(false);
       setCheckedObjectives({});
+      if (asideRef.current) {
+        asideRef.current.scrollTop = 0;
+      }
+      if (documentScrollRef.current) {
+        documentScrollRef.current.scrollTop = 0;
+      }
     }
   }, [plan]);
+
+  // Also scroll to top when the user explicitly clicks "Open in Studio" (even on the already-active plan)
+  useEffect(() => {
+    if (!scrollToTopSignal) return;
+    setShowToolsGrid(false);
+    if (asideRef.current) {
+      asideRef.current.scrollTop = 0;
+    }
+    if (documentScrollRef.current) {
+      documentScrollRef.current.scrollTop = 0;
+    }
+  }, [scrollToTopSignal]);
 
   const handleExportMarkdown = () => {
     if (!plan) return;
@@ -117,7 +139,10 @@ export const StudioPanel: React.FC<StudioPanelProps> = ({
   };
 
   return (
-    <aside className="w-full min-w-0 flex flex-col p-4 sm:p-6 rounded-panel bg-surface border border-border justify-between overflow-y-auto overflow-x-hidden thin-scrollbar h-full">
+    <aside
+      ref={asideRef}
+      className="w-full min-w-0 flex flex-col p-4 sm:p-6 rounded-panel bg-surface border border-border justify-between overflow-y-auto overflow-x-hidden thin-scrollbar h-full"
+    >
       {/* Header */}
       <div className="flex items-center justify-between gap-2 mb-4 flex-shrink-0 select-none min-w-0">
         <div className="flex items-center gap-2 min-w-0">
@@ -258,7 +283,10 @@ export const StudioPanel: React.FC<StudioPanelProps> = ({
           </div>
 
           {/* Scrollable Lesson Plan Document */}
-          <div className="flex-1 overflow-y-auto overflow-x-hidden thin-scrollbar pr-1 space-y-6 select-text min-w-0">
+          <div
+            ref={documentScrollRef}
+            className="flex-1 overflow-y-auto overflow-x-hidden thin-scrollbar pr-1 space-y-6 select-text min-w-0"
+          >
             {/* 1. Title & Meta Pills */}
             <div className="min-w-0">
               <h2 className="text-[20px] font-semibold text-ink tracking-tight leading-snug break-words">

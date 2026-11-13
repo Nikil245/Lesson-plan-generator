@@ -1,35 +1,55 @@
 """
 Step 5 - Chat with Server-Sent Events (SSE) streaming and session history.
 
-Each POST /chat request streams events in this order:
-    status ("Searching sources")
-    status ("Reading N passages")
-    status ("Drafting plan")
-    sources ({items: [{id, n, title, url, page, excerpt}]})
-    token   ({text: "..."})        <- streamed assistant chat reply
-    plan    ({data: LessonPlan})   <- omitted for general questions
-    done    ({})
+Every message is classified into one of three intents:
+    answer    -> written answer in chat with [n] citations; the plan is NOT touched
+    refine    -> update the existing lesson plan (only when a plan exists)
+    new_plan  -> create a fresh lesson plan
 
-On error, sends an `error {message}` event followed by `done {}`.
+Event order per POST /chat request:
+    answer:            status("Searching sources") -> status("Reading N passages")
+                       -> status("Writing answer") -> sources -> token(s) -> done
+    new_plan / refine: status("Searching sources") -> status("Reading N passages")
+                       -> status("Drafting plan") -> sources -> token(s) -> plan -> done
+
+The `done` event carries {"intent": "..."} (ignored by the frontend, used by tests).
+On error, sends an `error {message}` event with a readable message, then `done`.
 """
 
 import json
+import logging
+import os
 import re
 from collections.abc import Iterator
 
-from groq import Groq
+from groq import APIConnectionError, AuthenticationError, Groq, RateLimitError
 
 from app.config import settings
 from app.generate import (
+    RETRIEVE_K,
     TEMPERATURE,
     format_context,
     generate_from_chunks,
     get_context_chunks,
+    is_garbled,
 )
+from app.retrieve import retrieve
 from app.schemas import ChatRequest, LessonPlan, LessonRequest
+
+# uvicorn's logger prints straight into the uvicorn terminal
+log = logging.getLogger("uvicorn.error")
 
 MAX_TURNS = 10          # keep the last ~10 user+assistant turns per session
 EXCERPT_CHARS = 240     # preview length for each source item in the `sources` event
+MIN_PREFERRED_CHUNKS = 3  # top up from all sources if the selected ones give fewer than this
+
+# Optional cheaper model for the classifier; defaults to the main model
+CLASSIFIER_MODEL = os.getenv("GROQ_CLASSIFIER_MODEL", "") or settings.GROQ_MODEL
+
+INTENT_ANSWER = "answer"
+INTENT_REFINE = "refine"
+INTENT_NEW_PLAN = "new_plan"
+VALID_INTENTS = {INTENT_ANSWER, INTENT_REFINE, INTENT_NEW_PLAN}
 
 
 # ---------------------------------------------------------------------------
@@ -45,7 +65,7 @@ def get_session(session_id: str) -> dict:
         SESSIONS[session_id] = {
             "history": [],      # list of {"role": "user"|"assistant", "content": str}
             "plan": None,       # latest LessonPlan object (or None)
-            "chunks": [],       # latest retrieved chunks (reused for same-topic refinements)
+            "chunks": [],       # chunks behind the current plan (reused for refinements)
             "source_ids": None,
         }
     return SESSIONS[session_id]
@@ -70,94 +90,87 @@ def append_turn(session: dict, user_msg: str, assistant_msg: str) -> None:
 
 
 # ---------------------------------------------------------------------------
-# 2. Intent classification (new plan vs refinement vs general question)
+# 2. Groq helpers
 # ---------------------------------------------------------------------------
-PLAN_WORDS = {
-    "lesson", "plan", "outline", "curriculum", "workshop", "course", "class", "lecture", "teach",
-}
-REFINE_WORDS = {
-    "make", "add", "simplify", "simpler", "easier", "harder", "more", "less", "fewer",
-    "change", "update", "modify", "edit", "revise", "rewrite", "adjust", "replace",
-    "remove", "drop", "delete", "shorten", "lengthen", "expand", "extend", "split",
-    "combine", "merge", "include", "focus", "emphasize", "turn", "convert", "keep",
-    "hands-on", "handson", "quiz", "exercise", "exercises", "activity", "activities",
-    "demo", "discussion", "discuss", "assessment", "assessments", "objective", "objectives",
-    "prerequisite", "prerequisites", "intro", "introduction", "wrap-up", "summary",
-    "section", "block", "step", "part", "minute", "minutes",
-    "beginner", "intermediate", "advanced", "it",
-}
-QUESTION_STARTERS = (
-    "what ", "what's ", "why ", "how does ", "how do ", "how is ", "how are ",
-    "how many ", "how much ", "when ", "where ", "who ", "which ",
-    "explain ", "define ", "describe ", "summarize ", "tell me about ",
-    "does ", "do ", "is ", "are ", "can you explain",
-)
-NEW_TOPIC_PHRASES = (
-    "new plan", "new lesson", "new topic", "another lesson", "another plan",
-    "different topic", "switch to", "switch topic", "instead teach",
-    "lesson plan on ", "lesson plan about ", "lesson plan for ",
-    "lesson on ", "lesson about ", "plan on ", "plan about ", "teach about ",
-)
-NEW_TOPIC_IN_REFINE = re.compile(
-    r"\b(?:about|on|cover|covering|introduce|introducing)\s+[a-z0-9 -]{3,}",
-    re.IGNORECASE,
-)
+def groq_client() -> Groq:
+    if not settings.GROQ_API_KEY:
+        raise RuntimeError("GROQ_API_KEY is not set in backend/.env")
+    return Groq(api_key=settings.GROQ_API_KEY)
 
 
-def classify_message(message: str, has_plan: bool) -> tuple[str, bool]:
-    """
-    Decide how to handle `message`:
-      - ("question", True)   -> answer in chat with citations, keep current plan unchanged
-      - ("refine", bool)     -> update the existing plan; re-retrieve only if a new topic is mentioned
-      - ("new_plan", True)   -> retrieve and generate a fresh lesson plan
-    """
-    text = message.strip().lower()
-    words = set(re.findall(r"[a-z0-9-]+", text))
+def is_reasoning_model(model: str) -> bool:
+    """gpt-oss / qwen3 style models spend tokens on hidden reasoning before the answer."""
+    name = model.lower()
+    return "gpt-oss" in name or "qwen3" in name or "deepseek-r1" in name
 
-    is_explicit_new_plan = any(phrase in text for phrase in NEW_TOPIC_PHRASES)
 
-    # Check for a general factual question (not asking to build or edit a plan)
-    starts_like_question = text.startswith(QUESTION_STARTERS)
-    ends_with_qmark = text.endswith("?") and not any(
-        text.startswith(p) for p in ("can you ", "could you ", "would you ", "will you ", "please ")
+def reasoning_kwargs(model: str) -> dict:
+    """Keep reasoning short and out of `content` for reasoning models."""
+    if is_reasoning_model(model):
+        return {"reasoning_effort": "low", "include_reasoning": False}
+    return {}
+
+
+def complete_text(messages: list[dict], max_tokens: int, model: str | None = None,
+                  json_mode: bool = False, temperature: float = 0.0) -> str:
+    """One non-streaming Groq call that returns the message text ('' if empty)."""
+    model = model or settings.GROQ_MODEL
+    # Reasoning models count hidden reasoning tokens against the limit, so give
+    # them headroom; the visible answer is still capped by the prompt.
+    limit = max_tokens if not is_reasoning_model(model) else max(max_tokens, 300)
+    kwargs = {"response_format": {"type": "json_object"}} if json_mode else {}
+    response = groq_client().chat.completions.create(
+        model=model,
+        messages=messages,
+        temperature=temperature,
+        max_completion_tokens=limit,
+        **reasoning_kwargs(model),
+        **kwargs,
     )
-    if (starts_like_question or ends_with_qmark) and not is_explicit_new_plan:
-        if not has_plan and not (words & PLAN_WORDS):
-            return "question", True
-        if has_plan and not (words & (REFINE_WORDS | PLAN_WORDS)):
-            return "question", True
-        if starts_like_question and not (words & PLAN_WORDS):
-            return "question", True
-
-    if not has_plan:
-        return "new_plan", True
-
-    if is_explicit_new_plan:
-        return "new_plan", True
-
-    # Session already has a plan: check if this is a follow-up refinement
-    if words & (REFINE_WORDS | PLAN_WORDS):
-        # Re-run retrieval only if the refinement asks to cover a new topic
-        asks_new_topic = bool(NEW_TOPIC_IN_REFINE.search(text))
-        return "refine", asks_new_topic
-
-    # A bare topic name (e.g. "ReAct agents") when a plan already exists -> new plan on that topic
-    return "new_plan", True
+    return (response.choices[0].message.content or "").strip()
 
 
-# ---------------------------------------------------------------------------
-# 3. Streaming helpers (Groq + SSE)
-# ---------------------------------------------------------------------------
-QA_SYSTEM_PROMPT = """You are Lessonwright, a helpful assistant for teachers of prompt engineering.
+def stream_groq_reply(messages: list[dict]) -> Iterator[str]:
+    """
+    Stream plain-text tokens from Groq for the assistant's chat reply.
+    If the stream yields no visible text (can happen with reasoning models),
+    fall back to one non-streaming call so the user never gets an empty reply.
+    """
+    model = settings.GROQ_MODEL
+    stream = groq_client().chat.completions.create(
+        model=model,
+        messages=messages,
+        temperature=TEMPERATURE,
+        stream=True,
+        **reasoning_kwargs(model),
+    )
+    emitted = False
+    for chunk in stream:
+        if not chunk.choices:
+            continue
+        delta = chunk.choices[0].delta.content
+        if delta:
+            emitted = True
+            yield delta
 
-Answer the teacher's question clearly and concisely (2-5 sentences) using ONLY the numbered CONTEXT.
-Cite facts inline with [n] (e.g. [1] or [2][3]).
-If the answer is not in the CONTEXT, say that it is not covered in the uploaded sources."""
+    if not emitted:
+        log.warning("[chat] streamed reply was empty, retrying without streaming")
+        text = complete_text(messages, max_tokens=1200, temperature=TEMPERATURE)
+        if not text:
+            raise RuntimeError("The model returned an empty answer. Please try again.")
+        yield text
 
-SUMMARY_SYSTEM_PROMPT = """You are Lessonwright, an assistant that helps teachers build prompt engineering lesson plans.
 
-Write a brief, friendly chat reply (1-2 sentences) confirming the lesson plan you just prepared or updated.
-Mention the key focus or changes and include 1-2 relevant [n] citations from the plan."""
+def readable_error(err: Exception) -> str:
+    """Turn API/library exceptions into a short message for the chat UI."""
+    if isinstance(err, AuthenticationError):
+        return "The Groq API key was rejected. Update GROQ_API_KEY in backend/.env and restart the server."
+    if isinstance(err, RateLimitError):
+        return "The Groq rate limit was reached. Wait a moment and try again."
+    if isinstance(err, APIConnectionError):
+        return "Could not reach the Groq API. Check the server's internet connection."
+    text = str(err).strip()
+    return text or f"Something went wrong ({type(err).__name__}). Please try again."
 
 
 def sse_event(event: str, data: dict) -> str:
@@ -165,6 +178,121 @@ def sse_event(event: str, data: dict) -> str:
     return f"event: {event}\ndata: {json.dumps(data)}\n\n"
 
 
+def stream_words(text: str) -> Iterator[str]:
+    """Yield a fixed sentence word by word so it still arrives as token events."""
+    words = text.split(" ")
+    for i, word in enumerate(words):
+        yield word if i == len(words) - 1 else word + " "
+
+
+# ---------------------------------------------------------------------------
+# 3. Intent classification (answer vs refine vs new_plan)
+# ---------------------------------------------------------------------------
+# Fast shortcut: messages that are obviously requests for information.
+ANSWER_STARTERS = (
+    "what is", "what are", "what's", "why", "how does", "how do", "explain", "define",
+    "answer", "can you answer", "could you answer", "please answer", "give me the answer",
+)
+# Markers that only make sense when the user wants something written in chat.
+ANSWER_MARKERS = re.compile(
+    r"\b(\d+\s*marks?|model answer|answer (?:this|these|the following)|important questions"
+    r"|exam questions|question paper)\b",
+    re.IGNORECASE,
+)
+# Used only when the LLM classifier is unavailable.
+NEW_PLAN_PATTERN = re.compile(
+    r"\b(plan|create|design|build|prepare|make|draft|write)\b.{0,40}\b(lesson|course|session|class|workshop|lecture|curriculum)\b"
+    r"|\blesson plan\b",
+    re.IGNORECASE,
+)
+REFINE_STARTERS = (
+    "make it", "make the", "add a", "add an", "add more", "add some", "simplify", "shorten",
+    "lengthen", "extend", "change the", "rename", "remove", "drop", "replace", "split",
+    "turn it", "convert it", "reduce", "increase",
+)
+
+CLASSIFIER_PROMPT = """You route messages in a lesson-planning chat app. Reply with JSON only: {"intent": "answer" | "refine" | "new_plan"}.
+
+- "answer": the user wants information or something written in chat: a definition, explanation, summary, comparison, an answer to an exam/assignment question (e.g. "for 5 marks"), important questions from the sources, a model answer.
+- "refine": ONLY if a lesson plan exists AND the message clearly asks to edit that plan (e.g. "make it more hands-on", "add a quiz", "simplify", "shorten to 30 minutes", "add a section on X", "change the title").
+- "new_plan": the user asks to plan or create a lesson, course, class or session (e.g. "plan a 60-minute lesson on ...", "create a lesson plan for ...").
+
+If unsure, choose "answer". Never choose "refine" when no plan exists."""
+
+
+def normalize(message: str) -> str:
+    """Lowercase and expand chat shorthand ("can u" -> "can you") for keyword checks."""
+    text = message.strip().lower()
+    text = re.sub(r"\bu\b", "you", text)
+    text = re.sub(r"\bpls\b|\bplz\b", "please", text)
+    return re.sub(r"\s+", " ", text)
+
+
+def keyword_shortcut(message: str) -> str | None:
+    """Return 'answer' for obvious information requests, else None (ask the LLM)."""
+    text = normalize(message)
+    if text.startswith(ANSWER_STARTERS) or ANSWER_MARKERS.search(text):
+        return INTENT_ANSWER
+    return None
+
+
+def keyword_fallback(message: str, has_plan: bool) -> str:
+    """Conservative classification used if the LLM call fails. Defaults to answer."""
+    text = normalize(message)
+    if NEW_PLAN_PATTERN.search(text):
+        return INTENT_NEW_PLAN
+    if has_plan and text.startswith(REFINE_STARTERS):
+        return INTENT_REFINE
+    return INTENT_ANSWER
+
+
+def llm_classify(message: str, has_plan: bool, plan_title: str | None) -> str:
+    """Small, cheap Groq JSON call that returns one of the three intents."""
+    plan_line = f'yes, titled "{plan_title}"' if has_plan else "no"
+    raw = complete_text(
+        [
+            {"role": "system", "content": CLASSIFIER_PROMPT},
+            {"role": "user", "content": f"Lesson plan exists: {plan_line}\nMessage: {message}"},
+        ],
+        max_tokens=50,
+        model=CLASSIFIER_MODEL,
+        json_mode=True,
+        temperature=0.0,
+    )
+    intent = str(json.loads(raw).get("intent", "")).strip().lower()
+    if intent not in VALID_INTENTS:
+        raise ValueError(f"unexpected classifier output: {raw!r}")
+    return intent
+
+
+def classify_message(message: str, has_plan: bool, plan_title: str | None = None) -> tuple[str, str]:
+    """
+    Return (intent, how_decided). Rules:
+      1. obvious information requests -> answer (keyword shortcut, no LLM call)
+      2. otherwise ask the LLM classifier
+      3. ambiguous / failed -> answer, never refine
+      4. refine is impossible without a plan
+    """
+    shortcut = keyword_shortcut(message)
+    if shortcut:
+        return shortcut, "keyword"
+
+    try:
+        intent, how = llm_classify(message, has_plan, plan_title), "llm"
+    except Exception as err:  # network, parse or schema problems
+        log.warning("[chat] classifier failed (%s); using keyword fallback", readable_error(err))
+        intent, how = keyword_fallback(message, has_plan), "fallback"
+
+    if intent == INTENT_REFINE and not has_plan:
+        # Without a plan there is nothing to edit: plan only if clearly asked, else answer
+        intent = INTENT_NEW_PLAN if NEW_PLAN_PATTERN.search(normalize(message)) else INTENT_ANSWER
+        how += "+no-plan"
+    return intent, how
+
+
+# ---------------------------------------------------------------------------
+# 4. Retrieval for answers + prompts
+# ---------------------------------------------------------------------------
 def build_source_items(chunks: list[dict]) -> list[dict]:
     """Convert retrieved chunks into the payload for the `sources` SSE event."""
     return [
@@ -180,148 +308,206 @@ def build_source_items(chunks: list[dict]) -> list[dict]:
     ]
 
 
-def stream_groq_reply(messages: list[dict]) -> Iterator[str]:
-    """Stream plain-text tokens from Groq for the assistant's chat reply."""
-    if not settings.GROQ_API_KEY:
-        raise RuntimeError("GROQ_API_KEY is not set in backend/.env")
-    client = Groq(api_key=settings.GROQ_API_KEY)
-    stream = client.chat.completions.create(
-        model=settings.GROQ_MODEL,
-        messages=messages,
-        temperature=TEMPERATURE,
-        stream=True,
-    )
-    for chunk in stream:
-        if not chunk.choices:
-            continue
-        delta = chunk.choices[0].delta.content
-        if delta:
-            yield delta
+def get_answer_chunks(message: str, source_ids: list[str] | None) -> list[dict]:
+    """
+    Retrieve k=8 chunks for the user's actual message, skipping garbled ones.
+    Chunks from the selected sources come first; if those give too little,
+    top up with the best chunks from all sources.
+    """
+    preferred = [c for c in retrieve(message, k=RETRIEVE_K, source_ids=source_ids) if not is_garbled(c["text"])]
+    if not source_ids or len(preferred) >= MIN_PREFERRED_CHUNKS:
+        return preferred
+
+    seen = {(c["source_id"], c.get("chunk_index"), c["page"]) for c in preferred}
+    extra = [
+        c for c in retrieve(message, k=RETRIEVE_K)
+        if not is_garbled(c["text"]) and (c["source_id"], c.get("chunk_index"), c["page"]) not in seen
+    ]
+    return (preferred + extra)[:RETRIEVE_K]
 
 
-def stream_plan_summary(user_message: str, plan: LessonPlan, mode: str) -> Iterator[str]:
-    """Stream a short 1-2 sentence chat reply describing the generated or refined plan."""
-    outline_summary = ", ".join(f"{item.title} ({item.type})" for item in plan.outline)
-    used_cites = ", ".join(f"[{c.n}] {c.title}" for c in plan.citations) or "none"
-    action = "updated" if mode == "refine" else "created"
-    messages = [
-        {"role": "system", "content": SUMMARY_SYSTEM_PROMPT},
+ANSWER_SYSTEM_PROMPT = """You are Lessonwright, an assistant for teachers and students.
+
+Answer the user's request using ONLY the numbered CONTEXT.
+- Cite every fact inline with [n] (e.g. [1] or [2][3]). Only use numbers that exist in the CONTEXT.
+- Never invent facts, papers, numbers or quotes.
+- If the CONTEXT does not cover the request, say plainly that it is not covered in the uploaded sources (you may mention which related parts ARE covered).
+- Do not write or modify a lesson plan. Just answer in chat, in plain text or simple Markdown."""
+
+MARKS_PATTERN = re.compile(r"(\d+)\s*-?\s*marks?\b", re.IGNORECASE)
+
+
+def answer_style_instructions(message: str) -> str:
+    """Extra formatting rules for exam-style requests."""
+    match = MARKS_PATTERN.search(message)
+    if match:
+        marks = int(match.group(1))
+        points = max(2, min(marks, 10))
+        words = max(60, min(marks * 35, 600))
+        return (
+            f"This is an exam question worth {marks} marks. Write a structured model answer: "
+            f"a short heading, then about {points} numbered points (roughly {words - 25}-{words + 25} words in total), "
+            f"each grounded in the CONTEXT with [n] citations, and a one-line conclusion at the end."
+        )
+    text = normalize(message)
+    if "important questions" in text or "exam questions" in text or "question paper" in text:
+        return (
+            "List the most important exam questions that the CONTEXT supports, as a numbered list. "
+            "After each question add a short hint of the expected answer with [n] citations."
+        )
+    return "Answer clearly and concisely (usually 2-6 sentences, or a short list if that fits better)."
+
+
+def build_answer_messages(message: str, chunks: list[dict], history: list[dict]) -> list[dict]:
+    return [
+        {"role": "system", "content": ANSWER_SYSTEM_PROMPT},
+        *history,
         {
             "role": "user",
             "content": (
-                f"Teacher's message: {user_message}\n"
-                f"Action: {action} lesson plan '{plan.title}' ({plan.duration_min} min, {plan.level}).\n"
-                f"Outline sections: {outline_summary}\n"
-                f"Citations used: {used_cites}\n\n"
-                f"Write a short 1-2 sentence reply to the teacher."
+                f"CONTEXT:\n{format_context(chunks)}\n\n---\n"
+                f"REQUEST:\n{message}\n\n"
+                f"FORMAT:\n{answer_style_instructions(message)}"
             ),
         },
     ]
-    emitted = False
-    for token in stream_groq_reply(messages):
-        emitted = True
-        yield token
 
-    # Fallback if the model returned an empty stream
-    if not emitted:
-        cite_tag = f" [{plan.citations[0].n}]" if plan.citations else ""
-        fallback = (
-            f"I have {action} the **{plan.title}** lesson plan "
-            f"({plan.duration_min} min, {len(plan.outline)} sections){cite_tag}."
+
+def describe_refinement(instruction: str, old: LessonPlan | None, new: LessonPlan) -> str:
+    """One short sentence on what changed in a refined plan (falls back to a fixed sentence)."""
+    fallback = f'applied "{instruction.strip().rstrip(".")}" to "{new.title}"'
+    try:
+        old_outline = ", ".join(f"{i.title} ({i.type})" for i in old.outline) if old else "none"
+        new_outline = ", ".join(f"{i.title} ({i.type})" for i in new.outline)
+        text = complete_text(
+            [
+                {
+                    "role": "system",
+                    "content": "Describe in ONE short clause (max 20 words, no period, no preamble) what changed in a lesson plan.",
+                },
+                {
+                    "role": "user",
+                    "content": (
+                        f"Instruction: {instruction}\n"
+                        f"Old title: {old.title if old else '-'}\nOld outline: {old_outline}\n"
+                        f"New title: {new.title}\nNew outline: {new_outline}"
+                    ),
+                },
+            ],
+            max_tokens=60,
         )
-        for word in fallback.split(" "):
-            yield word + " "
+        text = text.strip().strip('"').rstrip(".").splitlines()[0] if text.strip() else ""
+        return text[:200] or fallback
+    except Exception as err:
+        log.warning("[chat] change summary failed (%s); using fallback", readable_error(err))
+        return fallback
 
 
 # ---------------------------------------------------------------------------
-# 4. Main SSE generator for POST /chat
+# 5. Main SSE generator for POST /chat
 # ---------------------------------------------------------------------------
+def stream_answer(chat_request: ChatRequest, session: dict) -> Iterator[str]:
+    """ANSWER mode: retrieve for the message, stream a cited answer, leave the plan alone."""
+    cfg = chat_request.settings
+    yield sse_event("status", {"step": "Searching sources"})
+    chunks = get_answer_chunks(chat_request.message, cfg.source_ids)
+    if not chunks:
+        raise ValueError(
+            "No readable passages in your sources match this question. "
+            "Try rephrasing, select other sources, or add documents."
+        )
+
+    yield sse_event("status", {"step": f"Reading {len(chunks)} passages"})
+    yield sse_event("status", {"step": "Writing answer"})
+    yield sse_event("sources", {"items": build_source_items(chunks)})
+
+    reply_parts: list[str] = []
+    for token in stream_groq_reply(build_answer_messages(chat_request.message, chunks, session["history"])):
+        reply_parts.append(token)
+        yield sse_event("token", {"text": token})
+
+    # Keep the turn for context; do NOT touch session["plan"] / ["chunks"]
+    append_turn(session, chat_request.message, "".join(reply_parts).strip())
+
+
+def stream_plan(chat_request: ChatRequest, session: dict, intent: str) -> Iterator[str]:
+    """NEW_PLAN / REFINE mode: generate or update the plan and send a plan event."""
+    cfg = chat_request.settings
+    current_plan: LessonPlan | None = session["plan"]
+    lesson_req = LessonRequest(
+        topic=chat_request.message,
+        level=cfg.level,
+        duration_min=cfg.duration_min,
+        audience=cfg.audience,
+        objectives=cfg.objectives,
+        source_ids=cfg.source_ids,
+    )
+
+    # Refinements reuse the plan's chunks unless the source filter changed
+    needs_retrieval = (
+        intent == INTENT_NEW_PLAN
+        or not session["chunks"]
+        or cfg.source_ids != session["source_ids"]
+    )
+
+    yield sse_event("status", {"step": "Searching sources"})
+    chunks = get_context_chunks(lesson_req) if needs_retrieval else session["chunks"]
+    if not chunks:
+        raise ValueError(
+            "No usable source material found for this topic. Ingest documents or change the source filter."
+        )
+
+    yield sse_event("status", {"step": f"Reading {len(chunks)} passages"})
+    yield sse_event("status", {"step": "Drafting plan"})
+    yield sse_event("sources", {"items": build_source_items(chunks)})
+
+    plan = generate_from_chunks(
+        lesson_req,
+        chunks,
+        history=session["history"],
+        current_plan=current_plan if intent == INTENT_REFINE else None,
+    )
+
+    if intent == INTENT_REFINE:
+        reply = f"I updated the plan: {describe_refinement(chat_request.message, current_plan, plan)}."
+    else:
+        reply = f"Here is your lesson plan: {plan.title}."
+    for token in stream_words(reply):
+        yield sse_event("token", {"text": token})
+
+    session["plan"] = plan
+    session["chunks"] = chunks
+    session["source_ids"] = cfg.source_ids
+    append_turn(session, chat_request.message, reply)
+
+    yield sse_event("plan", {"data": plan.model_dump()})
+
+
 def stream_chat(chat_request: ChatRequest) -> Iterator[str]:
-    """
-    Run the chat pipeline and yield Server-Sent Events in order:
-      status -> sources -> token(s) -> [plan] -> done
-    """
+    """Classify the message, then run the answer or plan pipeline as SSE events."""
+    intent = INTENT_ANSWER
     try:
         session = get_session(chat_request.session_id)
         current_plan: LessonPlan | None = session["plan"]
-        cfg = chat_request.settings
-
-        lesson_req = LessonRequest(
-            topic=chat_request.message,
-            level=cfg.level,
-            duration_min=cfg.duration_min,
-            audience=cfg.audience,
-            objectives=cfg.objectives,
-            source_ids=cfg.source_ids,
+        intent, how = classify_message(
+            chat_request.message,
+            has_plan=current_plan is not None,
+            plan_title=current_plan.title if current_plan else None,
+        )
+        log.info(
+            "[chat] session=%s intent=%s (via %s) has_plan=%s message=%r",
+            chat_request.session_id, intent, how, current_plan is not None, chat_request.message[:120],
         )
 
-        mode, needs_retrieval = classify_message(chat_request.message, has_plan=current_plan is not None)
-        if cfg.source_ids != session["source_ids"] or not session["chunks"]:
-            needs_retrieval = True
-
-        # 1. Status: Searching sources
-        yield sse_event("status", {"step": "Searching sources"})
-        if needs_retrieval:
-            chunks = get_context_chunks(lesson_req)
+        if intent == INTENT_ANSWER:
+            yield from stream_answer(chat_request, session)
         else:
-            chunks = session["chunks"]
+            yield from stream_plan(chat_request, session, intent)
 
-        if not chunks:
-            raise ValueError(
-                "No usable source material found for this topic. Ingest documents or change the source filter."
-            )
-
-        # 2. Status: Reading N passages -> Drafting plan
-        yield sse_event("status", {"step": f"Reading {len(chunks)} passages"})
-        yield sse_event("status", {"step": "Drafting plan"})
-
-        # 3. Sources event
-        yield sse_event("sources", {"items": build_source_items(chunks)})
-
-        # 4a. General question: stream answer with citations, do not change the plan
-        if mode == "question":
-            qa_messages = [
-                {"role": "system", "content": QA_SYSTEM_PROMPT},
-                *session["history"],
-                {
-                    "role": "user",
-                    "content": f"CONTEXT:\n{format_context(chunks)}\n\n---\nQUESTION:\n{chat_request.message}",
-                },
-            ]
-            reply_parts: list[str] = []
-            for token in stream_groq_reply(qa_messages):
-                reply_parts.append(token)
-                yield sse_event("token", {"text": token})
-
-            append_turn(session, chat_request.message, "".join(reply_parts).strip())
-            yield sse_event("done", {})
-            return
-
-        # 4b. Plan generation or refinement
-        plan = generate_from_chunks(
-            lesson_req,
-            chunks,
-            history=session["history"],
-            current_plan=current_plan if mode == "refine" else None,
-        )
-
-        # Stream the short assistant chat reply
-        reply_parts = []
-        for token in stream_plan_summary(chat_request.message, plan, mode):
-            reply_parts.append(token)
-            yield sse_event("token", {"text": token})
-
-        # Save state in session memory
-        session["plan"] = plan
-        session["chunks"] = chunks
-        session["source_ids"] = cfg.source_ids
-        append_turn(session, chat_request.message, "".join(reply_parts).strip())
-
-        # 5. Full validated LessonPlan JSON + done
-        yield sse_event("plan", {"data": plan.model_dump()})
-        yield sse_event("done", {})
+        yield sse_event("done", {"intent": intent})
 
     except Exception as err:
-        yield sse_event("error", {"message": str(err)})
-        yield sse_event("done", {})
-
+        message = readable_error(err)
+        log.error("[chat] session=%s intent=%s error: %s", chat_request.session_id, intent, message)
+        yield sse_event("error", {"message": message})
+        yield sse_event("done", {"intent": intent})

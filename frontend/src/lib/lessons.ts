@@ -28,6 +28,8 @@ export interface LessonRecord {
   settings: LessonSettings;
   messages: ChatMessage[];
   plan: LessonPlan | null;
+  /** ID of the currently active/selected plan version in Studio */
+  activePlanId?: string | null;
   /** Optional starter message pre-filled in the composer when created from a template */
   initialPrompt?: string;
   /** Tracks whether the user manually renamed the lesson so plan updates don't overwrite it */
@@ -115,6 +117,7 @@ export function createEmptyLesson(
     },
     messages: [],
     plan: null,
+    activePlanId: null,
     initialPrompt: overrides?.initialPrompt,
     titleManuallyEdited: false,
   };
@@ -198,6 +201,7 @@ export function duplicate(id: string): LessonRecord | null {
       currentStatus: null,
     })),
     plan: original.plan ? JSON.parse(JSON.stringify(original.plan)) : null,
+    activePlanId: original.activePlanId ?? null,
     titleManuallyEdited: true,
   };
 
