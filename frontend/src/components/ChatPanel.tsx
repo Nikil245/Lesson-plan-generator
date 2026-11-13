@@ -26,6 +26,8 @@ interface ChatPanelProps {
   onSelectCitation: (target: ActiveCitationTarget) => void;
   onUploadFiles: (files: FileList | File[]) => Promise<void>;
   onOpenStudio?: () => void;
+  initialDraft?: string;
+  onInitialDraftConsumed?: () => void;
 }
 
 const LEVEL_OPTIONS = [
@@ -76,8 +78,10 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
   onSelectCitation,
   onUploadFiles,
   onOpenStudio,
+  initialDraft,
+  onInitialDraftConsumed,
 }) => {
-  const [input, setInput] = useState('');
+  const [input, setInput] = useState(initialDraft || '');
   const [openMenu, setOpenMenu] = useState<
     'level' | 'duration' | 'audience' | null
   >(null);
@@ -87,6 +91,17 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const attachInputRef = useRef<HTMLInputElement>(null);
   const menuContainerRef = useRef<HTMLDivElement>(null);
+  const composerTextareaRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    if (initialDraft) {
+      setInput(initialDraft);
+      onInitialDraftConsumed?.();
+      setTimeout(() => {
+        composerTextareaRef.current?.focus();
+      }, 20);
+    }
+  }, [initialDraft, onInitialDraftConsumed]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -148,7 +163,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
     )?.label || settings.audience;
 
   return (
-    <section className="flex-1 flex flex-col p-4 sm:p-6 rounded-panel bg-surface border border-border relative overflow-hidden justify-between h-full">
+    <section className="flex-1 w-full min-w-0 flex flex-col p-4 sm:p-6 rounded-panel bg-surface border border-border relative overflow-hidden justify-between h-full">
       {/* Hidden file input for composer attach button */}
       <input
         ref={attachInputRef}
@@ -164,34 +179,34 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
         className="hidden"
       />
 
-      <div className="w-full max-w-[720px] mx-auto flex flex-col justify-between h-full min-h-0">
+      <div className="w-full max-w-[720px] mx-auto flex flex-col justify-between h-full min-h-0 min-w-0">
         {messages.length === 0 ? (
           /* Welcome Hero Section matching screen.png & code.html */
-          <div className="flex flex-col items-center text-center mt-auto mb-auto px-4 overflow-y-auto no-scrollbar py-4">
-            <div className="w-10 h-10 rounded-xl flex items-center justify-center mb-3 bg-surface-muted border border-border text-ink-muted">
+          <div className="flex flex-col items-center text-center mt-auto mb-auto px-2 sm:px-4 overflow-y-auto no-scrollbar py-4 min-w-0">
+            <div className="w-10 h-10 rounded-xl flex items-center justify-center mb-3 bg-surface-muted border border-border text-ink-muted flex-shrink-0">
               <span className="material-symbols-outlined text-[20px]">
                 school
               </span>
             </div>
-            <h1 className="text-[26px] sm:text-[28px] font-semibold tracking-tight text-ink">
+            <h1 className="text-[24px] sm:text-[28px] font-semibold tracking-tight text-ink break-words">
               What are we teaching?
             </h1>
-            <p className="text-[14px] sm:text-[15px] leading-relaxed text-ink-muted mt-2 max-w-[460px]">
+            <p className="text-[14px] sm:text-[15px] leading-relaxed text-ink-muted mt-2 max-w-[460px] break-words">
               Add your sources, then describe your class. I'll build a cited
               lesson plan from them.
             </p>
 
             {/* 3 Suggestion Cards (Full titles without truncation) */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 w-full mt-7">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 w-full mt-7 min-w-0">
               {SUGGESTION_CARDS.map((card) => (
                 <button
                   key={card.title}
                   type="button"
                   disabled={isStreaming}
                   onClick={() => onSendMessage(card.prompt)}
-                  className="flex items-center justify-between p-4 rounded-xl bg-surface border border-border hover:border-border-strong text-left transition-colors group disabled:opacity-60"
+                  className="flex items-center justify-between p-3.5 sm:p-4 rounded-xl bg-surface border border-border hover:border-border-strong text-left transition-colors group disabled:opacity-60 min-w-0"
                 >
-                  <span className="text-[13px] font-medium text-ink">
+                  <span className="text-[13px] font-medium text-ink break-words min-w-0">
                     {card.title}
                   </span>
                   <span className="material-symbols-outlined text-[16px] text-ink-muted group-hover:text-ink group-hover:translate-x-0.5 transition-all ml-2 flex-shrink-0">
@@ -203,11 +218,11 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
           </div>
         ) : (
           /* Conversation Thread */
-          <div className="flex-1 overflow-y-auto thin-scrollbar pr-1 py-2 space-y-5 min-h-0">
+          <div className="flex-1 overflow-y-auto overflow-x-hidden thin-scrollbar pr-1 py-2 space-y-5 min-h-0 min-w-0">
             {messages.map((msg) => {
               if (msg.role === 'user') {
                 return (
-                  <div key={msg.id} className="flex justify-end">
+                  <div key={msg.id} className="flex justify-end min-w-0">
                     <div className="max-w-[85%] sm:max-w-[75%] rounded-2xl rounded-tr-sm bg-surface-muted border border-border px-4 py-2.5 text-[14px] text-ink leading-relaxed break-words">
                       {msg.content}
                     </div>
@@ -218,10 +233,10 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
               // Assistant turn (left-aligned plain text + status steps + citations)
               const steps = msg.statusSteps || [];
               return (
-                <div key={msg.id} className="flex flex-col items-start gap-2">
+                <div key={msg.id} className="flex flex-col items-start gap-2 min-w-0">
                   {/* Status steps ("Searching sources" -> "Reading N passages" -> "Drafting plan") */}
                   {(msg.isStreaming || steps.length > 0) && (
-                    <div className="flex flex-wrap items-center gap-1.5 text-[12px]">
+                    <div className="flex flex-wrap items-center gap-1.5 text-[12px] min-w-0">
                       {steps.map((step, idx) => {
                         const isLatest =
                           msg.isStreaming && idx === steps.length - 1;
@@ -246,7 +261,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
                                   check
                                 </span>
                               )}
-                              <span>{step}</span>
+                              <span className="break-words">{step}</span>
                             </span>
                           </React.Fragment>
                         );
@@ -256,7 +271,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
 
                   {/* Streamed plain text on the left with clickable [n] citation chips */}
                   {msg.content ? (
-                    <div className="text-[14px] sm:text-[15px] leading-relaxed text-ink whitespace-pre-wrap max-w-full">
+                    <div className="text-[14px] sm:text-[15px] leading-relaxed text-ink whitespace-pre-wrap break-words max-w-full min-w-0">
                       <CitationText
                         text={msg.content}
                         sources={msg.sources}
@@ -278,7 +293,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
 
                   {/* Compact card when a LessonPlan was generated/updated in this turn */}
                   {msg.plan && (
-                    <div className="mt-1 w-full sm:w-auto inline-flex items-center justify-between gap-4 px-3.5 py-2.5 rounded-xl bg-surface-muted border border-border">
+                    <div className="mt-1 w-full sm:w-auto max-w-full inline-flex items-center justify-between gap-3 px-3.5 py-2.5 rounded-xl bg-surface-muted border border-border flex-wrap">
                       <div className="flex items-center gap-2.5 min-w-0">
                         <div className="w-7 h-7 rounded-lg bg-accent-soft text-accent flex items-center justify-center flex-shrink-0">
                           <span className="material-symbols-outlined text-[16px]">
@@ -286,7 +301,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
                           </span>
                         </div>
                         <div className="min-w-0">
-                          <p className="text-[13px] font-semibold text-ink truncate">
+                          <p className="text-[13px] font-semibold text-ink break-words">
                             {msg.plan.title}
                           </p>
                           <p className="text-[11px] text-ink-muted">
@@ -553,6 +568,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
               </button>
 
               <textarea
+                ref={composerTextareaRef}
                 rows={2}
                 value={input}
                 onChange={(e) => setInput(e.target.value)}

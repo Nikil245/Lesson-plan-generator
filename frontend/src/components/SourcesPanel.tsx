@@ -32,7 +32,6 @@ export const SourcesPanel: React.FC<SourcesPanelProps> = ({
   uploading,
   uploadError,
   onUploadFiles,
-  isCollapsed,
   onToggleCollapse,
   onPreviewSource,
 }) => {
@@ -107,59 +106,8 @@ export const SourcesPanel: React.FC<SourcesPanelProps> = ({
   const allSelected =
     sources.length > 0 && selectedSourceIds.length === sources.length;
 
-  // Collapsed desktop rail view
-  if (isCollapsed) {
-    return (
-      <aside className="hidden lg:flex w-14 flex-shrink-0 flex-col items-center justify-between py-5 px-2 rounded-panel bg-surface border border-border select-none">
-        <div className="flex flex-col items-center gap-3">
-          <button
-            type="button"
-            onClick={onToggleCollapse}
-            aria-label="Expand Sources panel"
-            title="Expand Sources"
-            className="w-8 h-8 rounded-md flex items-center justify-center text-ink-muted hover:text-ink hover:bg-surface-muted border border-transparent hover:border-border transition-colors"
-          >
-            <span className="material-symbols-outlined text-[18px]">
-              dock_to_left
-            </span>
-          </button>
-
-          <button
-            type="button"
-            onClick={triggerFilePicker}
-            title="Add sources"
-            aria-label="Add sources"
-            className="w-8 h-8 rounded-lg flex items-center justify-center text-ink bg-surface border border-border hover:bg-surface-muted transition-colors"
-          >
-            <span className="material-symbols-outlined text-[18px] text-ink-muted">
-              add
-            </span>
-          </button>
-
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".pdf,.md,.txt"
-            multiple
-            onChange={handleFileChange}
-            className="hidden"
-          />
-        </div>
-
-        <div className="flex flex-col items-center gap-2">
-          <span
-            title={`${selectedSourceIds.length} active sources`}
-            className="w-7 h-7 rounded-full bg-accent-soft text-accent text-[12px] font-semibold flex items-center justify-center"
-          >
-            {selectedSourceIds.length}
-          </span>
-        </div>
-      </aside>
-    );
-  }
-
   return (
-    <aside className="w-full lg:w-[320px] flex-shrink-0 flex flex-col p-6 rounded-panel bg-surface border border-border select-none justify-between overflow-hidden h-full">
+    <aside className="w-full min-w-0 flex flex-col p-4 sm:p-5 rounded-panel bg-surface border border-border select-none justify-between overflow-y-auto overflow-x-hidden thin-scrollbar h-full">
       {/* Hidden file input for POST /ingest */}
       <input
         ref={fileInputRef}
@@ -170,18 +118,18 @@ export const SourcesPanel: React.FC<SourcesPanelProps> = ({
         className="hidden"
       />
 
-      <div className="flex-shrink-0">
+      <div className="flex-shrink-0 min-w-0">
         {/* Header */}
-        <div className="flex items-center justify-between mb-5">
-          <span className="text-[18px] font-semibold text-ink tracking-tight">
+        <div className="flex items-center justify-between gap-2 mb-4">
+          <span className="text-[18px] font-semibold text-ink tracking-tight truncate">
             Sources
           </span>
           <button
             type="button"
             onClick={onToggleCollapse}
-            aria-label="Collapse panel"
+            aria-label="Collapse sources panel"
             title="Collapse Sources panel"
-            className="hidden lg:flex w-7 h-7 rounded-md items-center justify-center text-ink-muted hover:text-ink hover:bg-surface-muted transition-colors border border-transparent hover:border-border"
+            className="hidden md:flex w-7 h-7 rounded-md items-center justify-center text-ink-muted hover:text-ink hover:bg-surface-muted transition-colors border border-transparent hover:border-border flex-shrink-0"
           >
             <span className="material-symbols-outlined text-[18px]">
               dock_to_left
@@ -190,38 +138,40 @@ export const SourcesPanel: React.FC<SourcesPanelProps> = ({
         </div>
 
         {/* Action Buttons */}
-        <div className="grid grid-cols-2 gap-2 mb-4">
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-2 mb-4">
           <button
             type="button"
             disabled={uploading}
             onClick={triggerFilePicker}
-            className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg text-[13px] font-medium text-ink bg-surface border border-border hover:bg-surface-muted disabled:opacity-60 transition-colors"
+            className="flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-lg text-[13px] font-medium text-ink bg-surface border border-border hover:bg-surface-muted disabled:opacity-60 transition-colors min-w-0"
           >
-            <span className="material-symbols-outlined text-[16px] text-ink-muted">
+            <span className="material-symbols-outlined text-[16px] text-ink-muted flex-shrink-0">
               {uploading ? 'hourglass_top' : 'add'}
             </span>
-            <span>{uploading ? 'Uploading...' : 'Add sources'}</span>
+            <span className="truncate">
+              {uploading ? 'Uploading...' : 'Add sources'}
+            </span>
           </button>
 
           <button
             type="button"
             onClick={() => setNoteOpen((prev) => !prev)}
-            className={`flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg text-[13px] font-medium border transition-colors ${
+            className={`flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-lg text-[13px] font-medium border transition-colors min-w-0 ${
               noteOpen
                 ? 'bg-accent-soft text-accent border-accent/30'
                 : 'text-ink bg-surface border-border hover:bg-surface-muted'
             }`}
           >
-            <span className="material-symbols-outlined text-[16px] text-ink-muted">
+            <span className="material-symbols-outlined text-[16px] text-ink-muted flex-shrink-0">
               edit_note
             </span>
-            <span>Create note</span>
+            <span className="truncate">Create note</span>
           </button>
         </div>
 
         {/* Upload status / error feedback */}
         {uploadError && (
-          <div className="mb-3 p-2.5 rounded-lg bg-danger-soft border border-danger-border text-[12px] text-danger flex items-start justify-between gap-2">
+          <div className="mb-3 p-2.5 rounded-lg bg-danger-soft border border-danger-border text-[12px] text-danger flex items-start justify-between gap-2 break-words">
             <span>{uploadError}</span>
           </div>
         )}
@@ -232,14 +182,14 @@ export const SourcesPanel: React.FC<SourcesPanelProps> = ({
             onSubmit={handleCreateNoteSubmit}
             className="mb-4 p-3 rounded-xl bg-surface-muted border border-border flex flex-col gap-2"
           >
-            <div className="flex items-center justify-between">
-              <span className="text-[12px] font-semibold text-ink">
+            <div className="flex items-center justify-between gap-1">
+              <span className="text-[12px] font-semibold text-ink truncate">
                 New Markdown Note
               </span>
               <button
                 type="button"
                 onClick={() => setNoteOpen(false)}
-                className="text-ink-muted hover:text-ink"
+                className="text-ink-muted hover:text-ink flex-shrink-0"
               >
                 <span className="material-symbols-outlined text-[15px]">
                   close
@@ -251,14 +201,14 @@ export const SourcesPanel: React.FC<SourcesPanelProps> = ({
               placeholder="Note title (e.g. Few-shot examples)"
               value={noteTitle}
               onChange={(e) => setNoteTitle(e.target.value)}
-              className="w-full rounded-md bg-surface border border-border px-2.5 py-1.5 text-[12px] text-ink placeholder-ink-muted focus:outline-none focus:border-accent"
+              className="w-full rounded-md bg-surface border border-border px-2.5 py-1.5 text-[12px] text-ink placeholder-ink-muted focus:outline-none focus:border-accent min-w-0"
             />
             <input
               type="text"
               placeholder="Topic tag (optional)"
               value={noteTopic}
               onChange={(e) => setNoteTopic(e.target.value)}
-              className="w-full rounded-md bg-surface border border-border px-2.5 py-1.5 text-[12px] text-ink placeholder-ink-muted focus:outline-none focus:border-accent"
+              className="w-full rounded-md bg-surface border border-border px-2.5 py-1.5 text-[12px] text-ink placeholder-ink-muted focus:outline-none focus:border-accent min-w-0"
             />
             <textarea
               rows={3}
@@ -266,9 +216,9 @@ export const SourcesPanel: React.FC<SourcesPanelProps> = ({
               placeholder="Paste or type lecture notes to index..."
               value={noteContent}
               onChange={(e) => setNoteContent(e.target.value)}
-              className="w-full rounded-md bg-surface border border-border px-2.5 py-1.5 text-[12px] text-ink placeholder-ink-muted focus:outline-none focus:border-accent resize-none"
+              className="w-full rounded-md bg-surface border border-border px-2.5 py-1.5 text-[12px] text-ink placeholder-ink-muted focus:outline-none focus:border-accent resize-none min-w-0"
             />
-            <div className="flex justify-end gap-1.5 pt-1">
+            <div className="flex justify-end gap-1.5 pt-1 flex-wrap">
               <button
                 type="button"
                 onClick={() => setNoteOpen(false)}
@@ -289,8 +239,8 @@ export const SourcesPanel: React.FC<SourcesPanelProps> = ({
 
         {/* Search Container & Filter Chips */}
         <div className="flex flex-col gap-2.5 mb-4">
-          <div className="flex items-center rounded-lg bg-surface-muted border border-border px-3 py-2 focus-within:border-accent focus-within:bg-surface transition-colors">
-            <span className="material-symbols-outlined text-[18px] text-ink-muted mr-2">
+          <div className="flex items-center rounded-lg bg-surface-muted border border-border px-3 py-2 focus-within:border-accent focus-within:bg-surface transition-colors min-w-0">
+            <span className="material-symbols-outlined text-[18px] text-ink-muted mr-2 flex-shrink-0">
               search
             </span>
             <input
@@ -304,7 +254,7 @@ export const SourcesPanel: React.FC<SourcesPanelProps> = ({
               <button
                 type="button"
                 onClick={() => setSearchQuery('')}
-                className="text-ink-muted hover:text-ink ml-1"
+                className="text-ink-muted hover:text-ink ml-1 flex-shrink-0"
               >
                 <span className="material-symbols-outlined text-[15px]">
                   close
@@ -313,17 +263,17 @@ export const SourcesPanel: React.FC<SourcesPanelProps> = ({
             )}
           </div>
 
-          <div className="flex items-center gap-1.5 relative">
+          <div className="flex items-center gap-1.5 flex-wrap relative">
             <div className="relative">
               <button
                 type="button"
                 onClick={() => setTopicMenuOpen((o) => !o)}
                 className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-surface-muted text-ink-muted hover:text-ink border border-border text-[12px] font-medium transition-colors"
               >
-                <span>
+                <span className="truncate max-w-[110px]">
                   {selectedTopic === 'all' ? 'Web' : selectedTopic}
                 </span>
-                <span className="material-symbols-outlined text-[13px]">
+                <span className="material-symbols-outlined text-[13px] flex-shrink-0">
                   expand_more
                 </span>
               </button>
@@ -384,8 +334,8 @@ export const SourcesPanel: React.FC<SourcesPanelProps> = ({
               }
               className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-surface-muted text-ink-muted hover:text-ink border border-border text-[12px] font-medium transition-colors"
             >
-              <span>{modeLabel}</span>
-              <span className="material-symbols-outlined text-[13px]">
+              <span className="truncate">{modeLabel}</span>
+              <span className="material-symbols-outlined text-[13px] flex-shrink-0">
                 expand_more
               </span>
             </button>
@@ -395,7 +345,7 @@ export const SourcesPanel: React.FC<SourcesPanelProps> = ({
 
       {/* Main Content Area: Loading / Error / Empty / Source List */}
       {loading ? (
-        <div className="flex-1 flex flex-col justify-center items-center text-center px-3 py-6 border border-dashed border-border rounded-xl bg-surface-muted/60">
+        <div className="flex-1 flex flex-col justify-center items-center text-center px-3 py-6 border border-dashed border-border rounded-xl bg-surface-muted/60 min-h-[180px]">
           <div className="w-8 h-8 rounded-full border-2 border-border border-t-accent animate-spin mb-3" />
           <p className="text-[13px] font-medium text-ink">Loading sources...</p>
           <p className="text-[12px] text-ink-muted mt-0.5">
@@ -403,16 +353,16 @@ export const SourcesPanel: React.FC<SourcesPanelProps> = ({
           </p>
         </div>
       ) : error ? (
-        <div className="flex-1 flex flex-col justify-center items-center text-center px-4 py-6 border border-dashed border-border rounded-xl bg-surface-muted/60">
+        <div className="flex-1 flex flex-col justify-center items-center text-center px-3 py-6 border border-dashed border-border rounded-xl bg-surface-muted/60 min-h-[180px]">
           <div className="w-10 h-10 rounded-full flex items-center justify-center text-danger mb-3 bg-surface border border-border">
             <span className="material-symbols-outlined text-[20px]">
               cloud_off
             </span>
           </div>
-          <h4 className="text-[14px] font-semibold text-ink tracking-tight mb-1">
+          <h4 className="text-[14px] font-semibold text-ink tracking-tight mb-1 break-words">
             Couldn't reach the server.
           </h4>
-          <p className="text-[12px] leading-relaxed text-ink-muted mb-3 max-w-[210px]">
+          <p className="text-[12px] leading-relaxed text-ink-muted mb-3 max-w-[210px] break-words">
             {error}
           </p>
           <button
@@ -425,16 +375,16 @@ export const SourcesPanel: React.FC<SourcesPanelProps> = ({
         </div>
       ) : sources.length === 0 ? (
         /* Empty State matching screen.png & code.html */
-        <div className="flex-1 flex flex-col justify-center items-center text-center px-2 py-6 border border-dashed border-border rounded-xl bg-surface-muted/60">
+        <div className="flex-1 flex flex-col justify-center items-center text-center px-2 py-6 border border-dashed border-border rounded-xl bg-surface-muted/60 min-h-[180px]">
           <div className="w-10 h-10 rounded-full flex items-center justify-center text-ink-muted mb-3 bg-surface border border-border">
             <span className="material-symbols-outlined text-[20px]">
               description
             </span>
           </div>
-          <h4 className="text-[14px] font-semibold text-ink tracking-tight mb-1">
+          <h4 className="text-[14px] font-semibold text-ink tracking-tight mb-1 break-words">
             Saved sources will appear here
           </h4>
-          <p className="text-[12px] leading-relaxed text-ink-muted mb-3 max-w-[210px]">
+          <p className="text-[12px] leading-relaxed text-ink-muted mb-3 max-w-[210px] break-words">
             Add papers, guides, slides or notes to ground your lesson.
           </p>
           <button
@@ -448,30 +398,30 @@ export const SourcesPanel: React.FC<SourcesPanelProps> = ({
       ) : (
         /* Populated Sources List with Checkboxes setting settings.source_ids */
         <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
-          <div className="flex items-center justify-between pb-2 mb-2 border-b border-border text-[12px] text-ink-muted">
-            <label className="inline-flex items-center gap-2 cursor-pointer hover:text-ink">
+          <div className="flex items-center justify-between gap-2 pb-2 mb-2 border-b border-border text-[12px] text-ink-muted flex-wrap">
+            <label className="inline-flex items-center gap-2 cursor-pointer hover:text-ink min-w-0">
               <input
                 type="checkbox"
                 checked={allSelected}
                 onChange={(e) => onSelectAllSources(e.target.checked)}
-                className="w-4 h-4 rounded border-border text-accent focus:ring-0 focus:ring-offset-0 cursor-pointer accent-[#0D9488]"
+                className="w-4 h-4 rounded border-border text-accent focus:ring-0 focus:ring-offset-0 cursor-pointer accent-[#0D9488] flex-shrink-0"
               />
-              <span>
+              <span className="truncate">
                 Select all ({selectedSourceIds.length}/{sources.length})
               </span>
             </label>
             <button
               type="button"
               onClick={triggerFilePicker}
-              className="text-accent hover:text-accent-hover font-medium"
+              className="text-accent hover:text-accent-hover font-medium flex-shrink-0"
             >
               + Upload
             </button>
           </div>
 
-          <div className="flex-1 overflow-y-auto thin-scrollbar space-y-2 pr-0.5">
+          <div className="flex-1 overflow-y-auto thin-scrollbar space-y-2 pr-0.5 min-w-0">
             {filteredSources.length === 0 ? (
-              <div className="py-8 text-center text-[12px] text-ink-muted">
+              <div className="py-8 text-center text-[12px] text-ink-muted break-words">
                 No sources match “{searchQuery}”.
               </div>
             ) : (
@@ -481,7 +431,7 @@ export const SourcesPanel: React.FC<SourcesPanelProps> = ({
                   <div
                     key={source.id}
                     onClick={() => onToggleSource(source.id)}
-                    className={`group flex items-start gap-2.5 p-2.5 rounded-xl border transition-colors cursor-pointer ${
+                    className={`group flex items-start gap-2.5 p-2.5 rounded-xl border transition-colors cursor-pointer min-w-0 ${
                       isChecked
                         ? 'bg-surface border-border hover:border-border-strong'
                         : 'bg-surface-muted/60 border-border opacity-75 hover:opacity-100'
@@ -497,8 +447,8 @@ export const SourcesPanel: React.FC<SourcesPanelProps> = ({
                     />
 
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-start justify-between gap-1">
-                        <p className="text-[13px] font-medium text-ink leading-snug line-clamp-2">
+                      <div className="flex items-start justify-between gap-1 min-w-0">
+                        <p className="text-[13px] font-medium text-ink leading-snug break-words min-w-0">
                           {source.title}
                         </p>
                         {onPreviewSource && (
@@ -534,7 +484,7 @@ export const SourcesPanel: React.FC<SourcesPanelProps> = ({
 
                       <div className="flex items-center flex-wrap gap-1.5 mt-1 text-[11px] text-ink-muted">
                         {source.topic && (
-                          <span className="px-1.5 py-0.2 rounded bg-surface-muted border border-border text-[10px] font-medium">
+                          <span className="px-1.5 py-0.2 rounded bg-surface-muted border border-border text-[10px] font-medium truncate max-w-full">
                             {source.topic}
                           </span>
                         )}
@@ -567,4 +517,3 @@ export const SourcesPanel: React.FC<SourcesPanelProps> = ({
     </aside>
   );
 };
-

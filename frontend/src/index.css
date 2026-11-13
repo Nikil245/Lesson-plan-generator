@@ -23,6 +23,56 @@
   justify-content: center;
 }
 
+/* Smooth 200ms ease-out transition when collapsing/expanding panels
+   (disabled while actively dragging a divider so pointer resizing has zero lag) */
+.workspace-panel-group:not([data-dragging='true']) [data-panel] {
+  transition: flex-grow 200ms ease-out;
+}
+
+/* Home library & template card hover: subtle 2px lift (150ms ease-out) */
+.lesson-card-hover {
+  transition:
+    transform 150ms ease-out,
+    border-color 150ms ease-out;
+}
+
+.lesson-card-hover:hover {
+  transform: translateY(-2px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .workspace-panel-group [data-panel],
+  .mobile-tab-track,
+  .lesson-card-hover {
+    transition: none !important;
+  }
+
+  .lesson-card-hover:hover {
+    transform: none !important;
+  }
+}
+
+/* Resizable divider state styling (hover, drag, focus-visible) */
+[data-separator] {
+  cursor: col-resize;
+  user-select: none;
+  touch-action: none;
+}
+
+[data-separator='hover'] .divider-line,
+[data-separator='drag'] .divider-line,
+[data-separator]:hover .divider-line,
+[data-separator]:focus-visible .divider-line {
+  background-color: #0D9488;
+}
+
+[data-separator='hover'] .divider-grip,
+[data-separator='drag'] .divider-grip,
+[data-separator]:hover .divider-grip,
+[data-separator]:focus-visible .divider-grip {
+  opacity: 1;
+}
+
 /* Clean scrollbars that stay unobtrusive */
 .no-scrollbar::-webkit-scrollbar {
   display: none;
@@ -46,4 +96,3 @@
 .thin-scrollbar::-webkit-scrollbar-thumb:hover {
   background: #9CA3AF;
 }
-

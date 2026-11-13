@@ -1,4 +1,5 @@
 import React, { useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { API_BASE_URL, LessonPlan, lessonPlanToMarkdown } from '../api/client';
 
 interface TopBarProps {
@@ -45,9 +46,13 @@ export const TopBar: React.FC<TopBarProps> = ({
 
   return (
     <header className="h-14 sm:h-16 w-full px-4 flex items-center justify-between flex-shrink-0 bg-transparent relative">
-      {/* Left branding & editable title */}
-      <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-        <div className="flex items-center gap-2 flex-shrink-0">
+      {/* Left branding, Home link & editable title */}
+      <div className="flex items-center gap-2 sm:gap-2.5 min-w-0">
+        <Link
+          to="/"
+          aria-label="Lessonwright Home"
+          className="flex items-center gap-2 flex-shrink-0 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+        >
           <div className="w-8 h-8 rounded-lg flex items-center justify-center text-accent bg-accent-soft">
             <span className="material-symbols-outlined text-[20px]">
               auto_stories
@@ -56,8 +61,22 @@ export const TopBar: React.FC<TopBarProps> = ({
           <span className="text-[15px] font-semibold text-ink tracking-tight">
             Lessonwright
           </span>
-        </div>
+        </Link>
+
+        <span className="text-ink-subtle text-[15px] font-normal hidden sm:inline">
+          /
+        </span>
+
+        <Link
+          to="/"
+          className="hidden sm:inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[13px] font-medium text-ink-muted hover:text-ink hover:bg-surface-hover transition-colors flex-shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+        >
+          <span className="material-symbols-outlined text-[16px]">home</span>
+          <span>Home</span>
+        </Link>
+
         <span className="text-ink-subtle text-[15px] font-normal">/</span>
+
         <div
           onClick={() => titleInputRef.current?.focus()}
           className="flex items-center gap-1.5 px-2 py-1 rounded hover:bg-surface-hover transition-colors cursor-pointer group min-w-0"
@@ -78,11 +97,19 @@ export const TopBar: React.FC<TopBarProps> = ({
       </div>
 
       {/* Right utility controls */}
-      <div className="flex items-center gap-2 sm:gap-2.5 flex-shrink-0">
+      <div className="flex items-center gap-1.5 sm:gap-2.5 flex-shrink-0">
+        <Link
+          to="/"
+          aria-label="Home"
+          className="sm:hidden px-2.5 py-1.5 rounded-full text-[13px] font-medium text-ink-muted hover:text-ink hover:bg-surface-hover transition-colors flex items-center gap-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+        >
+          <span className="material-symbols-outlined text-[18px]">home</span>
+        </Link>
+
         <button
           type="button"
           onClick={onNewLesson}
-          className="px-3 sm:px-3.5 py-1.5 rounded-full text-[13px] sm:text-[14px] font-medium text-ink hover:bg-surface-hover transition-colors flex items-center gap-1.5"
+          className="px-3 sm:px-3.5 py-1.5 rounded-full text-[13px] sm:text-[14px] font-medium text-ink hover:bg-surface-hover transition-colors flex items-center gap-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
         >
           <span className="material-symbols-outlined text-ink-muted text-[18px]">
             add

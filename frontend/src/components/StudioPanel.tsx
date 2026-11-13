@@ -66,7 +66,6 @@ export const StudioPanel: React.FC<StudioPanelProps> = ({
   currentStatus,
   onSendQuickAction,
   onSelectCitation,
-  isCollapsed,
   onToggleCollapse,
 }) => {
   const [checkedObjectives, setCheckedObjectives] = useState<Record<number, boolean>>({});
@@ -117,96 +116,46 @@ export const StudioPanel: React.FC<StudioPanelProps> = ({
     }, 2000);
   };
 
-  // Collapsed desktop rail view
-  if (isCollapsed) {
-    return (
-      <aside className="hidden lg:flex w-14 flex-shrink-0 flex-col items-center justify-between py-5 px-2 rounded-panel bg-surface border border-border select-none">
-        <div className="flex flex-col items-center gap-3">
-          <button
-            type="button"
-            onClick={onToggleCollapse}
-            aria-label="Expand Studio panel"
-            title="Expand Studio"
-            className="w-8 h-8 rounded-md flex items-center justify-center text-ink-muted hover:text-ink hover:bg-surface-muted border border-transparent hover:border-border transition-colors"
-          >
-            <span className="material-symbols-outlined text-[18px]">
-              dock_to_right
-            </span>
-          </button>
-
-          {plan && (
-            <button
-              type="button"
-              onClick={handleExportMarkdown}
-              title="Export Markdown"
-              aria-label="Export Markdown"
-              className="w-8 h-8 rounded-lg flex items-center justify-center text-accent bg-accent-soft hover:bg-accent hover:text-white transition-colors"
-            >
-              <span className="material-symbols-outlined text-[17px]">
-                download
-              </span>
-            </button>
-          )}
-        </div>
-
-        <div className="flex flex-col items-center gap-2">
-          <span
-            title={plan ? `Plan ready: ${plan.title}` : 'No lesson plan yet'}
-            className={`w-2.5 h-2.5 rounded-full ${
-              plan ? 'bg-accent' : 'bg-border'
-            }`}
-          />
-        </div>
-      </aside>
-    );
-  }
-
   return (
-    <aside
-      className={`w-full ${
-        plan && !showToolsGrid
-          ? 'lg:w-[400px] xl:w-[460px]'
-          : 'lg:w-[360px]'
-      } flex-shrink-0 flex flex-col p-6 rounded-panel bg-surface border border-border justify-between overflow-hidden h-full transition-all`}
-    >
+    <aside className="w-full min-w-0 flex flex-col p-4 sm:p-6 rounded-panel bg-surface border border-border justify-between overflow-y-auto overflow-x-hidden thin-scrollbar h-full">
       {/* Header */}
-      <div className="flex items-center justify-between mb-4 flex-shrink-0 select-none">
-        <div className="flex items-center gap-2">
-          <span className="text-[18px] font-semibold text-ink tracking-tight">
+      <div className="flex items-center justify-between gap-2 mb-4 flex-shrink-0 select-none min-w-0">
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="text-[18px] font-semibold text-ink tracking-tight truncate">
             Studio
           </span>
           {plan && (
             <button
               type="button"
               onClick={() => setShowToolsGrid((v) => !v)}
-              className="px-2 py-0.5 rounded-full bg-surface-muted border border-border text-[11px] font-medium text-ink-muted hover:text-ink transition-colors"
+              className="px-2 py-0.5 rounded-full bg-surface-muted border border-border text-[11px] font-medium text-ink-muted hover:text-ink transition-colors flex-shrink-0"
             >
               {showToolsGrid ? 'View plan' : 'Tools'}
             </button>
           )}
         </div>
 
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1.5 flex-shrink-0">
           {plan && (
             <button
               type="button"
               onClick={handleExportMarkdown}
               title="Download lesson plan as Markdown (.md)"
-              className="px-3 py-1 rounded-full bg-surface-muted hover:bg-surface-hover border border-border text-[12px] font-medium text-ink flex items-center gap-1.5 transition-colors"
+              className="px-2.5 sm:px-3 py-1 rounded-full bg-surface-muted hover:bg-surface-hover border border-border text-[12px] font-medium text-ink flex items-center gap-1.5 transition-colors"
             >
               <span className="material-symbols-outlined text-[15px] text-ink-muted">
                 download
               </span>
-              <span>Export .md</span>
+              <span className="truncate">Export .md</span>
             </button>
           )}
 
           <button
             type="button"
             onClick={onToggleCollapse}
-            aria-label="Collapse panel"
+            aria-label="Collapse studio panel"
             title="Collapse Studio panel"
-            className="hidden lg:flex w-7 h-7 rounded-md items-center justify-center text-ink-muted hover:text-ink hover:bg-surface-muted transition-colors border border-transparent hover:border-border"
+            className="hidden md:flex w-7 h-7 rounded-md items-center justify-center text-ink-muted hover:text-ink hover:bg-surface-muted transition-colors border border-transparent hover:border-border flex-shrink-0"
           >
             <span className="material-symbols-outlined text-[18px]">
               dock_to_right
@@ -217,8 +166,8 @@ export const StudioPanel: React.FC<StudioPanelProps> = ({
 
       {/* Empty State / Studio Tools Grid (matches screen.png & code.html) */}
       {!plan || showToolsGrid ? (
-        <div className="flex-1 flex flex-col justify-between min-h-0 select-none">
-          <div className="grid grid-cols-2 gap-2.5">
+        <div className="flex-1 flex flex-col justify-between min-h-0 min-w-0 select-none overflow-y-auto thin-scrollbar">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 min-w-0">
             {STUDIO_TOOLS.map((tool) => (
               <button
                 key={tool.id}
@@ -238,12 +187,12 @@ export const StudioPanel: React.FC<StudioPanelProps> = ({
                     setShowToolsGrid(false);
                   }
                 }}
-                className="flex items-center gap-3 p-3.5 rounded-tile bg-surface border border-border hover:bg-surface-muted cursor-pointer transition-colors text-left disabled:opacity-60"
+                className="flex items-center gap-2.5 p-3 sm:p-3.5 rounded-tile bg-surface border border-border hover:bg-surface-muted cursor-pointer transition-colors text-left disabled:opacity-60 min-w-0"
               >
-                <span className="material-symbols-outlined text-[18px] text-ink-muted">
+                <span className="material-symbols-outlined text-[18px] text-ink-muted flex-shrink-0">
                   {tool.icon}
                 </span>
-                <span className="text-[14px] font-medium text-ink">
+                <span className="text-[13px] sm:text-[14px] font-medium text-ink break-words min-w-0">
                   {tool.label}
                 </span>
               </button>
@@ -251,14 +200,14 @@ export const StudioPanel: React.FC<StudioPanelProps> = ({
           </div>
 
           {/* Bottom Empty / Loading State */}
-          <div className="flex flex-col items-center justify-center p-5 rounded-xl border border-dashed border-border bg-surface-muted/60 text-center mt-4">
+          <div className="flex flex-col items-center justify-center p-5 rounded-xl border border-dashed border-border bg-surface-muted/60 text-center mt-4 flex-shrink-0">
             {isStreaming ? (
               <>
                 <div className="w-6 h-6 rounded-full border-2 border-border border-t-accent animate-spin mb-2" />
-                <p className="text-[12px] font-medium text-ink">
+                <p className="text-[12px] font-medium text-ink break-words">
                   {currentStatus || 'Drafting lesson plan...'}
                 </p>
-                <p className="text-[11px] text-ink-muted mt-0.5">
+                <p className="text-[11px] text-ink-muted mt-0.5 break-words">
                   Your structured plan will appear here
                 </p>
               </>
@@ -267,7 +216,7 @@ export const StudioPanel: React.FC<StudioPanelProps> = ({
                 <span className="material-symbols-outlined text-[20px] text-accent mb-1.5">
                   check_circle
                 </span>
-                <p className="text-[12px] font-medium text-ink mb-2">
+                <p className="text-[12px] font-medium text-ink mb-2 break-words">
                   {plan.title}
                 </p>
                 <button
@@ -283,7 +232,7 @@ export const StudioPanel: React.FC<StudioPanelProps> = ({
                 <span className="material-symbols-outlined text-[20px] text-ink-muted mb-2">
                   auto_fix_high
                 </span>
-                <p className="text-[12px] text-ink-muted">
+                <p className="text-[12px] text-ink-muted break-words">
                   Generated lessons will be saved here.
                 </p>
               </>
@@ -292,7 +241,7 @@ export const StudioPanel: React.FC<StudioPanelProps> = ({
         </div>
       ) : (
         /* Rendered LessonPlan Document */
-        <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+        <div className="flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden">
           {/* Quick-action refinement pills ("Make it more hands-on", "Add a quiz", "Simplify") */}
           <div className="flex items-center gap-1.5 flex-wrap pb-3 mb-3 border-b border-border flex-shrink-0">
             {QUICK_ACTIONS.map((actionText) => (
@@ -309,10 +258,10 @@ export const StudioPanel: React.FC<StudioPanelProps> = ({
           </div>
 
           {/* Scrollable Lesson Plan Document */}
-          <div className="flex-1 overflow-y-auto thin-scrollbar pr-1 space-y-6 select-text">
+          <div className="flex-1 overflow-y-auto overflow-x-hidden thin-scrollbar pr-1 space-y-6 select-text min-w-0">
             {/* 1. Title & Meta Pills */}
-            <div>
-              <h2 className="text-[20px] font-semibold text-ink tracking-tight leading-snug">
+            <div className="min-w-0">
+              <h2 className="text-[20px] font-semibold text-ink tracking-tight leading-snug break-words">
                 {plan.title}
               </h2>
               <div className="flex items-center flex-wrap gap-1.5 mt-2.5">
@@ -343,7 +292,7 @@ export const StudioPanel: React.FC<StudioPanelProps> = ({
 
             {/* 2. Objectives Checklist */}
             {plan.objectives && plan.objectives.length > 0 && (
-              <section>
+              <section className="min-w-0">
                 <h3 className="text-[12px] font-semibold uppercase tracking-wider text-ink-muted mb-2.5">
                   Learning Objectives
                 </h3>
@@ -353,7 +302,7 @@ export const StudioPanel: React.FC<StudioPanelProps> = ({
                     return (
                       <label
                         key={idx}
-                        className="flex items-start gap-2.5 p-2.5 rounded-xl bg-surface-muted/70 border border-border cursor-pointer hover:border-border-strong transition-colors"
+                        className="flex items-start gap-2.5 p-2.5 rounded-xl bg-surface-muted/70 border border-border cursor-pointer hover:border-border-strong transition-colors min-w-0"
                       >
                         <input
                           type="checkbox"
@@ -367,7 +316,7 @@ export const StudioPanel: React.FC<StudioPanelProps> = ({
                           className="mt-0.5 w-4 h-4 rounded border-border text-accent focus:ring-0 focus:ring-offset-0 cursor-pointer accent-[#0D9488] flex-shrink-0"
                         />
                         <span
-                          className={`text-[13px] leading-relaxed ${
+                          className={`text-[13px] leading-relaxed break-words min-w-0 ${
                             checked ? 'line-through text-ink-muted' : 'text-ink'
                           }`}
                         >
@@ -387,13 +336,13 @@ export const StudioPanel: React.FC<StudioPanelProps> = ({
 
             {/* 3. Prerequisites (if present) */}
             {plan.prerequisites && plan.prerequisites.length > 0 && (
-              <section>
+              <section className="min-w-0">
                 <h3 className="text-[12px] font-semibold uppercase tracking-wider text-ink-muted mb-2">
                   Prerequisites
                 </h3>
                 <ul className="space-y-1.5 pl-4 list-disc text-[13px] text-ink marker:text-ink-subtle">
                   {plan.prerequisites.map((item, idx) => (
-                    <li key={idx} className="leading-relaxed">
+                    <li key={idx} className="leading-relaxed break-words">
                       <CitationText
                         text={item}
                         sources={sources}
@@ -408,8 +357,8 @@ export const StudioPanel: React.FC<StudioPanelProps> = ({
 
             {/* 4. Timed Outline Timeline */}
             {plan.outline && plan.outline.length > 0 && (
-              <section>
-                <div className="flex items-center justify-between mb-3">
+              <section className="min-w-0">
+                <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
                   <h3 className="text-[12px] font-semibold uppercase tracking-wider text-ink-muted">
                     Timed Outline
                   </h3>
@@ -418,18 +367,18 @@ export const StudioPanel: React.FC<StudioPanelProps> = ({
                   </span>
                 </div>
 
-                <div className="relative pl-4 border-l border-border space-y-4">
+                <div className="relative pl-4 border-l border-border space-y-4 min-w-0">
                   {plan.outline.map((item, idx) => {
                     const badge = activityBadgeStyle(item.type);
                     const duration = item.end_min - item.start_min;
                     const isCopied = copiedPromptIdx === idx;
 
                     return (
-                      <div key={idx} className="relative group">
+                      <div key={idx} className="relative group min-w-0">
                         {/* Timeline dot */}
                         <span className="absolute -left-[21px] top-3 w-2.5 h-2.5 rounded-full bg-surface border-2 border-accent" />
 
-                        <div className="p-3.5 rounded-xl bg-surface border border-border hover:border-border-strong transition-colors space-y-2">
+                        <div className="p-3.5 rounded-xl bg-surface border border-border hover:border-border-strong transition-colors space-y-2 min-w-0">
                           {/* Top row: time range + demo/discuss/hands-on pill */}
                           <div className="flex items-center justify-between gap-2 flex-wrap">
                             <span className="font-mono text-[11px] font-medium text-ink-muted">
@@ -446,12 +395,12 @@ export const StudioPanel: React.FC<StudioPanelProps> = ({
                           </div>
 
                           {/* Block Title */}
-                          <h4 className="text-[14px] font-semibold text-ink leading-snug">
+                          <h4 className="text-[14px] font-semibold text-ink leading-snug break-words">
                             {item.title}
                           </h4>
 
                           {/* Description with clickable [n] citations */}
-                          <p className="text-[13px] text-ink leading-relaxed">
+                          <p className="text-[13px] text-ink leading-relaxed break-words">
                             <CitationText
                               text={item.description}
                               sources={sources}
@@ -462,9 +411,9 @@ export const StudioPanel: React.FC<StudioPanelProps> = ({
 
                           {/* Example Prompt in a code block with Copy button */}
                           {item.example_prompt && (
-                            <div className="mt-2 rounded-lg bg-surface-code border border-border overflow-hidden">
-                              <div className="flex items-center justify-between px-3 py-1.5 bg-surface-muted border-b border-border">
-                                <span className="text-[11px] font-medium text-ink-muted font-mono">
+                            <div className="mt-2 rounded-lg bg-surface-code border border-border overflow-hidden min-w-0">
+                              <div className="flex items-center justify-between gap-2 px-3 py-1.5 bg-surface-muted border-b border-border">
+                                <span className="text-[11px] font-medium text-ink-muted font-mono truncate">
                                   Example prompt
                                 </span>
                                 <button
@@ -472,7 +421,7 @@ export const StudioPanel: React.FC<StudioPanelProps> = ({
                                   onClick={() =>
                                     handleCopyPrompt(item.example_prompt!, idx)
                                   }
-                                  className="inline-flex items-center gap-1 text-[11px] font-medium text-ink-muted hover:text-accent transition-colors"
+                                  className="inline-flex items-center gap-1 text-[11px] font-medium text-ink-muted hover:text-accent transition-colors flex-shrink-0"
                                 >
                                   <span className="material-symbols-outlined text-[13px]">
                                     {isCopied ? 'check' : 'content_copy'}
@@ -495,7 +444,7 @@ export const StudioPanel: React.FC<StudioPanelProps> = ({
 
             {/* 5. Assessment */}
             {plan.assessment && plan.assessment.length > 0 && (
-              <section>
+              <section className="min-w-0">
                 <h3 className="text-[12px] font-semibold uppercase tracking-wider text-ink-muted mb-2.5">
                   Assessment
                 </h3>
@@ -503,12 +452,12 @@ export const StudioPanel: React.FC<StudioPanelProps> = ({
                   {plan.assessment.map((item, idx) => (
                     <li
                       key={idx}
-                      className="flex items-start gap-2 p-2.5 rounded-xl bg-surface-muted/60 border border-border text-[13px] text-ink leading-relaxed"
+                      className="flex items-start gap-2 p-2.5 rounded-xl bg-surface-muted/60 border border-border text-[13px] text-ink leading-relaxed min-w-0"
                     >
                       <span className="material-symbols-outlined text-[16px] text-accent mt-0.5 flex-shrink-0">
                         fact_check
                       </span>
-                      <span>
+                      <span className="break-words min-w-0">
                         <CitationText
                           text={item}
                           sources={sources}
@@ -524,7 +473,7 @@ export const StudioPanel: React.FC<StudioPanelProps> = ({
 
             {/* 6. Further Reading */}
             {plan.further_reading && plan.further_reading.length > 0 && (
-              <section>
+              <section className="min-w-0">
                 <h3 className="text-[12px] font-semibold uppercase tracking-wider text-ink-muted mb-2">
                   Further Reading
                 </h3>
@@ -532,12 +481,12 @@ export const StudioPanel: React.FC<StudioPanelProps> = ({
                   {plan.further_reading.map((item, idx) => (
                     <li
                       key={idx}
-                      className="flex items-start gap-2 text-[13px] text-ink leading-relaxed"
+                      className="flex items-start gap-2 text-[13px] text-ink leading-relaxed min-w-0"
                     >
                       <span className="material-symbols-outlined text-[16px] text-ink-muted mt-0.5 flex-shrink-0">
                         menu_book
                       </span>
-                      <span>
+                      <span className="break-words min-w-0">
                         <CitationText
                           text={item}
                           sources={sources}
@@ -553,7 +502,7 @@ export const StudioPanel: React.FC<StudioPanelProps> = ({
 
             {/* 7. Citations */}
             {plan.citations && plan.citations.length > 0 && (
-              <section className="pt-2 border-t border-border">
+              <section className="pt-2 border-t border-border min-w-0">
                 <h3 className="text-[12px] font-semibold uppercase tracking-wider text-ink-muted mb-2.5">
                   Citations ({plan.citations.length})
                 </h3>
@@ -580,14 +529,14 @@ export const StudioPanel: React.FC<StudioPanelProps> = ({
                             },
                           });
                         }}
-                        className="flex items-start justify-between gap-2 p-2 rounded-lg bg-surface-muted hover:bg-accent-soft/50 border border-border cursor-pointer transition-colors"
+                        className="flex items-start justify-between gap-2 p-2 rounded-lg bg-surface-muted hover:bg-accent-soft/50 border border-border cursor-pointer transition-colors min-w-0"
                       >
                         <div className="flex items-start gap-2 min-w-0">
                           <span className="inline-flex items-center justify-center min-w-[20px] h-[19px] px-1.5 rounded-full bg-accent text-white text-[11px] font-semibold flex-shrink-0 mt-0.5">
                             {cite.n}
                           </span>
                           <div className="min-w-0">
-                            <p className="text-[12px] font-medium text-ink truncate">
+                            <p className="text-[12px] font-medium text-ink break-words">
                               {cite.title}
                             </p>
                             <p className="text-[11px] text-ink-muted">
@@ -622,4 +571,3 @@ export const StudioPanel: React.FC<StudioPanelProps> = ({
     </aside>
   );
 };
-
