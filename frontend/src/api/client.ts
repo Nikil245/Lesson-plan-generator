@@ -81,6 +81,8 @@ export interface LessonPlan {
   outline: OutlineItem[];
   assessment: string[];
   further_reading: string[];
+  covered_topics?: string[];
+  not_covered_yet?: string[];
   citations: Citation[];
 }
 
@@ -90,12 +92,118 @@ export interface ChatSettings {
   audience: string;
   objectives: string[];
   source_ids: string[] | null;
+  course_id?: string | null;
 }
 
 export interface ChatRequest {
   session_id: string;
   message: string;
+  course_id?: string | null;
   settings: ChatSettings;
+}
+
+// ---------------------------------------------------------------------------
+// Course & progress tracking types matching backend/app/db.py & schemas.py
+// ---------------------------------------------------------------------------
+
+export type TopicStatus = 'not_started' | 'planned' | 'taught';
+export type LessonStatus = 'planned' | 'taught';
+
+export interface NextTopicSummary {
+  id: string;
+  position: number;
+  title: string;
+  page_start: number;
+  page_end: number;
+  est_minutes: number;
+}
+
+export interface CourseProgress {
+  topics_total: number;
+  planned: number;
+  taught: number;
+  percent_topics: number;
+  percent_pages: number;
+  next_topics: NextTopicSummary[];
+}
+
+export interface CourseTopic {
+  id: string;
+  course_id: string;
+  position: number;
+  title: string;
+  summary: string;
+  page_start: number;
+  page_end: number;
+  est_minutes: number;
+  status: TopicStatus;
+}
+
+export interface CourseLesson {
+  id: string;
+  course_id: string;
+  seq: number;
+  title: string;
+  duration_min: number;
+  topic_ids: string[];
+  plan: LessonPlan;
+  status: LessonStatus;
+  created_at: string;
+}
+
+export interface CourseSummary {
+  id: string;
+  title: string;
+  source_ids: string[];
+  created_at: string;
+  progress: CourseProgress;
+}
+
+export interface CourseDetail extends CourseSummary {
+  topics: CourseTopic[];
+  lessons: CourseLesson[];
+}
+
+export interface CreateCoursePayload {
+  title: string;
+  source_ids: string[];
+}
+
+export interface CreateTopicPayload {
+  title: string;
+  summary?: string;
+  page_start: number;
+  page_end: number;
+  est_minutes: number;
+  position?: number;
+}
+
+export interface UpdateTopicPayload {
+  title?: string;
+  summary?: string;
+  page_start?: number;
+  page_end?: number;
+  position?: number;
+  est_minutes?: number;
+  status?: TopicStatus;
+}
+
+export interface CreateCourseLessonPayload {
+  duration_min: number;
+  level: string;
+  audience: string;
+  objectives?: string[];
+  topic_ids?: string[];
+}
+
+export interface CreateCourseLessonResult extends CourseLesson {
+  covered_topics: CourseTopic[];
+  remaining_topics: CourseTopic[];
+  progress: CourseProgress;
+}
+
+export interface UpdateCourseLessonResult extends CourseLesson {
+  progress: CourseProgress;
 }
 
 export interface ChatSSEHandlers {
@@ -220,6 +328,248 @@ export async function ingestSource(
   const result: IngestResult = await response.json();
   clearSourceDetailCache(result.source_id);
   return result;
+}
+
+// ---------------------------------------------------------------------------
+// Course & progress tracking endpoints (/courses, /courses/{id}, ...)
+// ---------------------------------------------------------------------------
+
+/**
+ * GET /courses -> list all courses with progress summaries.
+ */
+export async function fetchCourses(): Promise<CourseSummary[]> {
+  const response = await fetch(`${API_BASE_URL}/courses`, {
+    method: 'GET',
+    headers: { Accept: 'application/json' },
+  });
+
+  if (!response.ok) {
+    const detail = await safeReadError(response);
+    throw new Error(detail || `Failed to load courses (${response.status})`);
+  }
+
+  return response.json();
+}
+
+/**
+ * POST /courses -> create a course and generate its syllabus from source_ids.
+ */
+export async function createCourse(
+  payload: CreateCoursePayload
+): Promise<CourseDetail> {
+  const response = await fetch(`${API_BASE_URL}/courses`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    const detail = await safeReadError(response);
+    throw new Error(detail || `Failed to create course (${response.status})`);
+  }
+
+  return response.json();
+}
+
+/**
+ * GET /courses/{id} -> fetch course metadata, syllabus topics, lessons, and progress.
+ */
+export async function fetchCourse(courseId: string): Promise<CourseDetail> {
+  const response = await fetch(
+    `${API_BASE_URL}/courses/${encodeURIComponent(courseId)}`,
+    {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+    }
+  );
+
+  if (!response.ok) {
+    const detail = await safeReadError(response);
+    throw new Error(detail || `Course '${courseId}' not found (${response.status})`);
+  }
+
+  return response.json();
+}
+
+/**
+ * GET /courses/{id}/progress -> fetch topic/page progress and upcoming topics.
+ */
+export async function fetchCourseProgress(
+  courseId: string
+): Promise<CourseProgress> {
+  const response = await fetch(
+    `${API_BASE_URL}/courses/${encodeURIComponent(courseId)}/progress`,
+    {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+    }
+  );
+
+  if (!response.ok) {
+    const detail = await safeReadError(response);
+    throw new Error(detail || `Failed to load progress (${response.status})`);
+  }
+
+  return response.json();
+}
+
+/**
+ * POST /courses/{id}/topics -> add a new topic to the course syllabus.
+ */
+export async function addCourseTopic(
+  courseId: string,
+  payload: CreateTopicPayload
+): Promise<CourseTopic> {
+  const response = await fetch(
+    `${API_BASE_URL}/courses/${encodeURIComponent(courseId)}/topics`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      body: JSON.stringify(payload),
+    }
+  );
+
+  if (!response.ok) {
+    const detail = await safeReadError(response);
+    throw new Error(detail || `Failed to add topic (${response.status})`);
+  }
+
+  return response.json();
+}
+
+/**
+ * PATCH /courses/{id}/topics/{topic_id} -> edit a topic's title, minutes, position, or status.
+ */
+export async function updateCourseTopic(
+  courseId: string,
+  topicId: string,
+  payload: UpdateTopicPayload
+): Promise<CourseTopic> {
+  const response = await fetch(
+    `${API_BASE_URL}/courses/${encodeURIComponent(courseId)}/topics/${encodeURIComponent(topicId)}`,
+    {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      body: JSON.stringify(payload),
+    }
+  );
+
+  if (!response.ok) {
+    const detail = await safeReadError(response);
+    throw new Error(detail || `Failed to update topic (${response.status})`);
+  }
+
+  return response.json();
+}
+
+/**
+ * DELETE /courses/{id}/topics/{topic_id} -> remove a topic from the course syllabus.
+ */
+export async function deleteCourseTopic(
+  courseId: string,
+  topicId: string
+): Promise<{ deleted: boolean; topic_id: string }> {
+  const response = await fetch(
+    `${API_BASE_URL}/courses/${encodeURIComponent(courseId)}/topics/${encodeURIComponent(topicId)}`,
+    {
+      method: 'DELETE',
+      headers: { Accept: 'application/json' },
+    }
+  );
+
+  if (!response.ok) {
+    const detail = await safeReadError(response);
+    throw new Error(detail || `Failed to delete topic (${response.status})`);
+  }
+
+  return response.json();
+}
+
+/**
+ * POST /courses/{id}/lessons -> generate and save the next class lesson plan.
+ */
+export async function createCourseLesson(
+  courseId: string,
+  payload: CreateCourseLessonPayload
+): Promise<CreateCourseLessonResult> {
+  const response = await fetch(
+    `${API_BASE_URL}/courses/${encodeURIComponent(courseId)}/lessons`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      body: JSON.stringify(payload),
+    }
+  );
+
+  if (!response.ok) {
+    const detail = await safeReadError(response);
+    throw new Error(detail || `Failed to generate class plan (${response.status})`);
+  }
+
+  return response.json();
+}
+
+/**
+ * PATCH /courses/{id}/lessons/{lesson_id} -> toggle lesson status ('planned' | 'taught').
+ */
+export async function updateCourseLessonStatus(
+  courseId: string,
+  lessonId: string,
+  status: LessonStatus
+): Promise<UpdateCourseLessonResult> {
+  const response = await fetch(
+    `${API_BASE_URL}/courses/${encodeURIComponent(courseId)}/lessons/${encodeURIComponent(lessonId)}`,
+    {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      body: JSON.stringify({ status }),
+    }
+  );
+
+  if (!response.ok) {
+    const detail = await safeReadError(response);
+    throw new Error(detail || `Failed to update class status (${response.status})`);
+  }
+
+  return response.json();
+}
+
+/**
+ * DELETE /courses/{id}/lessons/{lesson_id} -> delete a planned lesson and revert unused topics.
+ */
+export async function deleteCourseLesson(
+  courseId: string,
+  lessonId: string
+): Promise<{ deleted: boolean; lesson_id: string; progress: CourseProgress }> {
+  const response = await fetch(
+    `${API_BASE_URL}/courses/${encodeURIComponent(courseId)}/lessons/${encodeURIComponent(lessonId)}`,
+    {
+      method: 'DELETE',
+      headers: { Accept: 'application/json' },
+    }
+  );
+
+  if (!response.ok) {
+    const detail = await safeReadError(response);
+    throw new Error(detail || `Failed to delete class (${response.status})`);
+  }
+
+  return response.json();
 }
 
 // ---------------------------------------------------------------------------

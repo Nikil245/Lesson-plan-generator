@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 import {
   LessonPlan,
   lessonPlanToMarkdown,
@@ -17,6 +18,8 @@ interface StudioPanelProps {
   isCollapsed: boolean;
   onToggleCollapse: () => void;
   scrollToTopSignal?: number;
+  courseId?: string | null;
+  courseTitle?: string | null;
 }
 
 const QUICK_ACTIONS = ['Make it more hands-on', 'Add a quiz', 'Simplify'];
@@ -69,6 +72,8 @@ export const StudioPanel: React.FC<StudioPanelProps> = ({
   onSelectCitation,
   onToggleCollapse,
   scrollToTopSignal,
+  courseId,
+  courseTitle,
 }) => {
   const [checkedObjectives, setCheckedObjectives] = useState<Record<number, boolean>>({});
   const [copiedPromptIdx, setCopiedPromptIdx] = useState<number | null>(null);
@@ -317,6 +322,41 @@ export const StudioPanel: React.FC<StudioPanelProps> = ({
                 )}
               </div>
             </div>
+
+            {/* 1b. Course Topics Covered ("Covers") */}
+            {plan.covered_topics && plan.covered_topics.length > 0 && (
+              <section
+                aria-label="Topics covered in this lesson"
+                className="p-3 rounded-xl bg-surface-muted/70 border border-border space-y-2 min-w-0"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <h3 className="text-[11px] font-semibold uppercase tracking-wider text-ink-muted">
+                    Covers
+                  </h3>
+                  {courseId && (
+                    <Link
+                      to={`/course/${courseId}`}
+                      className="text-[11px] font-medium text-accent hover:text-accent-hover inline-flex items-center gap-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent rounded"
+                    >
+                      <span>{courseTitle || 'Course syllabus'}</span>
+                      <span className="material-symbols-outlined text-[13px]">
+                        arrow_forward
+                      </span>
+                    </Link>
+                  )}
+                </div>
+                <div className="flex items-center flex-wrap gap-1.5">
+                  {plan.covered_topics.map((topicTitle, idx) => (
+                    <span
+                      key={`${topicTitle}-${idx}`}
+                      className="inline-flex items-center px-2.5 py-0.5 rounded-full bg-accent-soft text-accent border border-accent/25 text-[11px] font-medium"
+                    >
+                      {topicTitle}
+                    </span>
+                  ))}
+                </div>
+              </section>
+            )}
 
             {/* 2. Objectives Checklist */}
             {plan.objectives && plan.objectives.length > 0 && (
@@ -591,6 +631,37 @@ export const StudioPanel: React.FC<StudioPanelProps> = ({
                     );
                   })}
                 </div>
+              </section>
+            )}
+
+            {/* 8. Not Covered Yet + Link back to Course Page */}
+            {((plan.not_covered_yet && plan.not_covered_yet.length > 0) ||
+              courseId) && (
+              <section
+                aria-label="Remaining course topics"
+                className="pt-3 border-t border-border text-[12px] text-ink-muted space-y-1.5 min-w-0"
+              >
+                <p className="leading-relaxed break-words">
+                  <span className="font-semibold text-ink">
+                    Not covered yet:
+                  </span>{' '}
+                  {plan.not_covered_yet && plan.not_covered_yet.length > 0
+                    ? plan.not_covered_yet.join(', ')
+                    : 'All syllabus topics covered.'}
+                </p>
+                {courseId && (
+                  <Link
+                    to={`/course/${courseId}`}
+                    className="inline-flex items-center gap-1 text-[12px] font-medium text-accent hover:text-accent-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent rounded"
+                  >
+                    <span className="material-symbols-outlined text-[14px]">
+                      arrow_back
+                    </span>
+                    <span>
+                      Back to {courseTitle || 'course syllabus'}
+                    </span>
+                  </Link>
+                )}
               </section>
             )}
           </div>

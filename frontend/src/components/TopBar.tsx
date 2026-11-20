@@ -9,6 +9,8 @@ interface TopBarProps {
   sessionId: string;
   plan: LessonPlan | null;
   sourcesCount: number;
+  courseId?: string | null;
+  courseTitle?: string | null;
 }
 
 export const TopBar: React.FC<TopBarProps> = ({
@@ -18,6 +20,8 @@ export const TopBar: React.FC<TopBarProps> = ({
   sessionId,
   plan,
   sourcesCount,
+  courseId,
+  courseTitle,
 }) => {
   const titleInputRef = useRef<HTMLInputElement>(null);
   const [sharedCopied, setSharedCopied] = useState(false);
@@ -74,6 +78,24 @@ export const TopBar: React.FC<TopBarProps> = ({
           <span className="material-symbols-outlined text-[16px]">home</span>
           <span>Home</span>
         </Link>
+
+        {courseId && (
+          <>
+            <span className="text-ink-subtle text-[15px] font-normal hidden sm:inline">
+              /
+            </span>
+            <Link
+              to={`/course/${courseId}`}
+              aria-label={`Back to course ${courseTitle || 'course'}`}
+              className="hidden sm:inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[13px] font-medium text-accent bg-accent-soft hover:bg-accent-soft/80 border border-accent/20 transition-colors flex-shrink-0 max-w-[180px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            >
+              <span className="material-symbols-outlined text-[15px] flex-shrink-0">
+                school
+              </span>
+              <span className="truncate">{courseTitle || 'Course'}</span>
+            </Link>
+          </>
+        )}
 
         <span className="text-ink-subtle text-[15px] font-normal">/</span>
 

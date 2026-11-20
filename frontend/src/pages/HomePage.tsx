@@ -1,6 +1,14 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { API_BASE_URL, createSessionId, fetchSources } from '../api/client';
+import {
+  API_BASE_URL,
+  CourseDetail,
+  CourseSummary,
+  createSessionId,
+  fetchCourses,
+  fetchSources,
+} from '../api/client';
+import { NewCourseModal } from '../components/NewCourseModal';
 import * as lessonStore from '../lib/lessons';
 import { LessonRecord } from '../lib/lessons';
 
@@ -163,10 +171,17 @@ function formatLevelLabel(level: string): string {
 export const HomePage: React.FC = () => {
   const navigate = useNavigate();
 
-  // Library state
+  // Library state (standalone lessons + backend-tracked courses)
   const [lessons, setLessons] = useState<LessonRecord[]>(() =>
     lessonStore.list()
   );
+  const [courses, setCourses] = useState<CourseSummary[]>(() =>
+    lessonStore.readCachedCourses()
+  );
+  const [coursesLoading, setCoursesLoading] = useState<boolean>(true);
+  const [coursesError, setCoursesError] = useState<string | null>(null);
+  const [newCourseOpen, setNewCourseOpen] = useState<boolean>(false);
+
   const [activeTab, setActiveTab] = useState<FilterTab>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
@@ -192,10 +207,29 @@ export const HomePage: React.FC = () => {
   const sortMenuRef = useRef<HTMLDivElement>(null);
   const renameInputRef = useRef<HTMLInputElement>(null);
 
-  // Refresh lessons on mount
+  // Refresh standalone lessons on mount
   useEffect(() => {
     setLessons(lessonStore.list());
   }, []);
+
+  // Load courses from backend as source of truth (localStorage is cache only)
+  const loadCourses = useCallback(async () => {
+    setCoursesLoading(true);
+    setCoursesError(null);
+    try {
+      const list = await fetchCourses();
+      setCourses(list);
+      lessonStore.writeCachedCourses(list);
+    } catch {
+      setCoursesError("Couldn't refresh courses from the server.");
+    } finally {
+      setCoursesLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadCourses();
+  }, [loadCourses]);
 
   // Fetch indexed source count from backend if reachable
   useEffect(() => {
@@ -326,11 +360,46 @@ export const HomePage: React.FC = () => {
     setDeletingLesson(null);
   };
 
-  const filteredAndSortedLessons = useMemo(() => {
+  const handleCourseCreated = (created: CourseDetail) => {
+    setNewCourseOpen(false);
+    lessonStore.writeCachedCourseDetail(created);
+    setCourses((prev) => [
+      {
+        id: created.id,
+        title: created.title,
+        source_ids: created.source_ids,
+        created_at: created.created_at,
+        progress: created.progress,
+      },
+      ...prev.filter((c) => c.id !== created.id),
+    ]);
+    navigate(`/course/${created.id}`);
+  };
+
+  const filteredAndSortedCourses = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
     const filtered = query
-      ? lessons.filter((l) => l.title.toLowerCase().includes(query))
-      : [...lessons];
+      ? courses.filter((c) => c.title.toLowerCase().includes(query))
+      : [...courses];
+
+    if (sortBy === 'title') {
+      return filtered.sort((a, b) =>
+        a.title.localeCompare(b.title, undefined, { sensitivity: 'base' })
+      );
+    }
+
+    return filtered.sort(
+      (a, b) =>
+        new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    );
+  }, [courses, searchQuery, sortBy]);
+
+  const filteredAndSortedLessons = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    const standalone = lessons.filter((l) => !l.courseId);
+    const filtered = query
+      ? standalone.filter((l) => l.title.toLowerCase().includes(query))
+      : [...standalone];
 
     if (sortBy === 'title') {
       return filtered.sort((a, b) =>
@@ -675,23 +744,23 @@ export const HomePage: React.FC = () => {
           </section>
         )}
 
-        {/* 3. SECTION: RECENT LESSONS */}
+        {/* 3. SECTION: RECENT (Courses + standalone lessons) */}
         <section aria-labelledby="recent-lessons-heading" className="space-y-4">
           <div className="flex items-center justify-between gap-3 flex-wrap">
             <h2
               id="recent-lessons-heading"
               className="text-[16px] sm:text-[18px] font-semibold text-ink tracking-tight"
             >
-              Recent lessons
+              Recent
             </h2>
 
-            {/* Right controls: Sort dropdown + "+ New lesson" solid teal pill button */}
-            <div className="flex items-center gap-2.5">
+            {/* Right controls: Sort dropdown + "New course" + "+ New lesson" */}
+            <div className="flex items-center gap-2 sm:gap-2.5 flex-wrap">
               {/* Sort dropdown (Most recent, Title) */}
               <div ref={sortMenuRef} className="relative">
                 <button
                   type="button"
-                  aria-label="Sort lessons"
+                  aria-label="Sort lessons and courses"
                   aria-expanded={sortDropdownOpen}
                   onClick={() => setSortDropdownOpen((prev) => !prev)}
                   className="px-3.5 py-1.5 rounded-full bg-surface border border-border hover:border-border-strong text-[13px] font-medium text-ink flex items-center gap-1.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
@@ -747,6 +816,19 @@ export const HomePage: React.FC = () => {
                 )}
               </div>
 
+              {/* Secondary outlined pill button "New course" */}
+              <button
+                type="button"
+                aria-label="New course"
+                onClick={() => setNewCourseOpen(true)}
+                className="px-3.5 py-1.5 rounded-full bg-surface border border-accent/40 hover:border-accent hover:bg-accent-soft text-accent text-[13px] sm:text-[14px] font-medium transition-colors flex items-center gap-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+              >
+                <span className="material-symbols-outlined text-[18px]">
+                  school
+                </span>
+                <span>New course</span>
+              </button>
+
               {/* Solid teal pill button "+ New lesson" */}
               <button
                 type="button"
@@ -761,8 +843,185 @@ export const HomePage: React.FC = () => {
             </div>
           </div>
 
-          {/* Empty state when there are no lessons at all */}
-          {lessons.length === 0 ? (
+          {/* Backend course fetch warning (non-blocking if cache exists) */}
+          {coursesError && (
+            <div
+              role="alert"
+              className="px-3.5 py-2 rounded-xl bg-danger-soft border border-danger-border flex items-center justify-between gap-2 text-[12px] text-danger"
+            >
+              <span>{coursesError}</span>
+              <button
+                type="button"
+                onClick={loadCourses}
+                className="font-medium underline"
+              >
+                Retry
+              </button>
+            </div>
+          )}
+
+          {/* Course loading skeleton (only when no cached courses yet) */}
+          {coursesLoading && courses.length === 0 && lessons.length === 0 ? (
+            <div
+              role="status"
+              aria-label="Loading courses"
+              className="grid grid-cols-1 md:grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-4"
+            >
+              {[1, 2, 3].map((n) => (
+                <div
+                  key={n}
+                  className="h-[188px] rounded-[24px] bg-surface border border-border p-5 animate-pulse"
+                />
+              ))}
+            </div>
+          ) : null}
+
+          {/* Courses cards inside Recent */}
+          {filteredAndSortedCourses.length > 0 && (
+            <div
+              className={
+                viewMode === 'list'
+                  ? 'flex flex-col gap-2.5'
+                  : 'grid grid-cols-1 md:grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-4'
+              }
+            >
+              {filteredAndSortedCourses.map((course) => {
+                const { taught, topics_total, percent_topics, planned } =
+                  course.progress;
+                const progressLabel = `${taught} of ${topics_total} topics`;
+
+                if (viewMode === 'list') {
+                  return (
+                    <div
+                      key={course.id}
+                      role="button"
+                      tabIndex={0}
+                      aria-label={`Open course ${course.title}, ${progressLabel}`}
+                      onClick={() => navigate(`/course/${course.id}`)}
+                      onKeyDown={(e) =>
+                        handleCardKeyDown(e, () =>
+                          navigate(`/course/${course.id}`)
+                        )
+                      }
+                      className="lesson-card-hover w-full rounded-[20px] bg-surface border border-border hover:border-border-strong px-4 py-3.5 flex items-center justify-between gap-4 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                    >
+                      <div className="flex items-center gap-3.5 min-w-0 flex-1">
+                        <div className="w-10 h-10 rounded-xl bg-accent-soft text-accent flex items-center justify-center flex-shrink-0">
+                          <span className="material-symbols-outlined text-[20px]">
+                            school
+                          </span>
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2">
+                            <h3 className="text-[15px] font-semibold text-ink truncate">
+                              {course.title}
+                            </h3>
+                            <span className="px-2 py-0.5 rounded-full bg-accent-soft text-accent text-[10px] font-semibold uppercase tracking-wide flex-shrink-0">
+                              Course
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-3 mt-1">
+                            <span className="text-[12px] text-ink-muted">
+                              {progressLabel}
+                            </span>
+                            <div
+                              role="progressbar"
+                              aria-label={`${course.title} progress`}
+                              aria-valuenow={Math.round(percent_topics)}
+                              aria-valuemin={0}
+                              aria-valuemax={100}
+                              className="w-28 h-1.5 rounded-full bg-surface-muted overflow-hidden"
+                            >
+                              <div
+                                style={{
+                                  width: `${Math.min(100, Math.max(0, percent_topics))}%`,
+                                }}
+                                className="h-full bg-accent rounded-full"
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="hidden sm:flex items-center gap-3 text-[12px] text-ink-muted flex-shrink-0">
+                        <span>{formatLessonDate(course.created_at)}</span>
+                        {planned > 0 && (
+                          <span className="px-2.5 py-0.5 rounded-full bg-surface-muted border border-border text-ink font-medium">
+                            {planned} planned
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                }
+
+                return (
+                  <div
+                    key={course.id}
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`Open course ${course.title}, ${progressLabel}`}
+                    onClick={() => navigate(`/course/${course.id}`)}
+                    onKeyDown={(e) =>
+                      handleCardKeyDown(e, () =>
+                        navigate(`/course/${course.id}`)
+                      )
+                    }
+                    className="lesson-card-hover rounded-[24px] bg-surface border border-border hover:border-border-strong p-5 flex flex-col justify-between min-h-[188px] cursor-pointer text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="w-10 h-10 rounded-xl bg-accent-soft text-accent flex items-center justify-center flex-shrink-0">
+                        <span className="material-symbols-outlined text-[20px]">
+                          school
+                        </span>
+                      </div>
+                      <span className="px-2.5 py-0.5 rounded-full bg-accent-soft text-accent border border-accent/20 text-[11px] font-medium">
+                        Course
+                      </span>
+                    </div>
+
+                    <div className="mt-5 space-y-2.5">
+                      <h3 className="text-[15px] font-semibold text-ink leading-snug line-clamp-2 break-words">
+                        {course.title}
+                      </h3>
+
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between gap-2 text-[12px]">
+                          <span className="font-medium text-ink-muted">
+                            {progressLabel}
+                          </span>
+                          <span className="text-[11px] text-ink-subtle">
+                            {formatLessonDate(course.created_at)}
+                          </span>
+                        </div>
+                        {/* Thin teal progress bar */}
+                        <div
+                          role="progressbar"
+                          aria-label={`${course.title} progress`}
+                          aria-valuenow={Math.round(percent_topics)}
+                          aria-valuemin={0}
+                          aria-valuemax={100}
+                          className="w-full h-1.5 rounded-full bg-surface-muted overflow-hidden"
+                        >
+                          <div
+                            style={{
+                              width: `${Math.min(100, Math.max(0, percent_topics))}%`,
+                            }}
+                            className="h-full bg-accent rounded-full transition-all duration-300"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Empty state when there are no courses AND no standalone lessons */}
+          {!coursesLoading &&
+          courses.length === 0 &&
+          lessons.filter((l) => !l.courseId).length === 0 ? (
             <div className="rounded-[24px] bg-surface border border-border p-10 sm:p-14 flex flex-col items-center justify-center text-center max-w-xl mx-auto my-6">
               <div className="w-12 h-12 rounded-2xl bg-surface-muted border border-border flex items-center justify-center text-ink-muted mb-4">
                 <span className="material-symbols-outlined text-[24px]">
@@ -770,31 +1029,45 @@ export const HomePage: React.FC = () => {
                 </span>
               </div>
               <h3 className="text-[17px] font-semibold text-ink">
-                No lessons yet
+                No courses or lessons yet
               </h3>
               <p className="text-[14px] text-ink-muted mt-1 max-w-sm">
-                Start from a prompt engineering template above or create a blank
-                lesson grounded in your sources.
+                Create a tracked course from a PDF source, start from a template
+                above, or create a standalone lesson.
               </p>
-              <button
-                type="button"
-                onClick={handleCreateNewLesson}
-                className="mt-5 px-4 py-2 rounded-full bg-accent hover:bg-accent-hover text-white text-[14px] font-medium transition-colors inline-flex items-center gap-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2"
-              >
-                <span className="material-symbols-outlined text-[18px]">
-                  add
-                </span>
-                <span>New lesson</span>
-              </button>
+              <div className="mt-5 flex items-center gap-2.5 flex-wrap justify-center">
+                <button
+                  type="button"
+                  onClick={() => setNewCourseOpen(true)}
+                  className="px-4 py-2 rounded-full bg-surface border border-accent/40 hover:border-accent hover:bg-accent-soft text-accent text-[14px] font-medium transition-colors inline-flex items-center gap-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                >
+                  <span className="material-symbols-outlined text-[18px]">
+                    school
+                  </span>
+                  <span>New course</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCreateNewLesson}
+                  className="px-4 py-2 rounded-full bg-accent hover:bg-accent-hover text-white text-[14px] font-medium transition-colors inline-flex items-center gap-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2"
+                >
+                  <span className="material-symbols-outlined text-[18px]">
+                    add
+                  </span>
+                  <span>New lesson</span>
+                </button>
+              </div>
             </div>
-          ) : filteredAndSortedLessons.length === 0 ? (
-            /* No search matches */
+          ) : searchQuery.trim() &&
+            filteredAndSortedCourses.length === 0 &&
+            filteredAndSortedLessons.length === 0 ? (
+            /* No search matches across courses and lessons */
             <div className="rounded-[24px] bg-surface border border-border p-10 flex flex-col items-center justify-center text-center max-w-lg mx-auto my-4">
               <span className="material-symbols-outlined text-[24px] text-ink-muted mb-2">
                 search_off
               </span>
               <p className="text-[15px] font-medium text-ink">
-                No lessons matching "{searchQuery}"
+                No courses or lessons matching "{searchQuery}"
               </p>
               <button
                 type="button"
@@ -804,7 +1077,7 @@ export const HomePage: React.FC = () => {
                 Clear search
               </button>
             </div>
-          ) : viewMode === 'list' ? (
+          ) : filteredAndSortedLessons.length === 0 ? null : viewMode === 'list' ? (
             /* List view (full-width rows: title, date, sources, level, duration, three-dot menu) */
             <div className="flex flex-col gap-2.5">
               {filteredAndSortedLessons.map((lesson) => {
@@ -1065,6 +1338,13 @@ export const HomePage: React.FC = () => {
       >
         <span className="material-symbols-outlined text-[24px]">add</span>
       </button>
+
+      {/* New Course Modal */}
+      <NewCourseModal
+        open={newCourseOpen}
+        onClose={() => setNewCourseOpen(false)}
+        onCreated={handleCourseCreated}
+      />
 
       {/* Rename Modal */}
       {renamingLesson && (

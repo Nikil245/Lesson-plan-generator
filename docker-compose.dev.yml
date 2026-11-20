@@ -9,6 +9,7 @@ services:
     volumes:
       - ./backend/app:/app/app
       - chroma_db:/app/chroma_db
+      - course_db:/app/data/db
       - ./backend/data/sources:/app/data/sources
 
   frontend:

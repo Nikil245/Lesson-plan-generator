@@ -14,10 +14,12 @@ import {
   useLocation,
   useNavigate,
   useParams,
+  useSearchParams,
 } from 'react-router-dom';
 import {
   ChatSettings,
   createSessionId,
+  fetchCourse,
   fetchSources,
   ingestSource,
   LessonPlan,
@@ -32,6 +34,7 @@ import { SourcesPanel } from './components/SourcesPanel';
 import { StudioPanel } from './components/StudioPanel';
 import { TopBar } from './components/TopBar';
 import * as lessonStore from './lib/lessons';
+import { CoursePage } from './pages/CoursePage';
 import { HomePage } from './pages/HomePage';
 
 type MobileTab = 'sources' | 'chat' | 'studio';
@@ -167,21 +170,28 @@ const WorkspaceDivider: React.FC<WorkspaceDividerProps> = ({
 
 const LessonWorkspace: React.FC = () => {
   const { id } = useParams<{ id: string }>();
+  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const location = useLocation();
 
   // The :id route parameter is the session_id sent to POST /chat
   const sessionId = id || '';
+  const queryCourseId = searchParams.get('courseId');
 
   /**
-   * NOTE: Because the backend currently keeps chat sessions only in memory,
-   * we restore `messages`, `plan`, and `settings` from the local lesson store
-   * (`lessonwright.lessons`) when opening `/lesson/:id`, and auto-save changes.
-   * A persistent backend store can replace this later.
+   * Standalone lessons use localStorage; course lessons (?courseId=...) are
+   * hydrated from the backend `/courses/{id}` endpoint with localStorage as cache.
    */
   const initialRecord = useRef(
     sessionId ? lessonStore.get(sessionId) : null
   ).current;
+
+  const [courseId, setCourseId] = useState<string | null>(
+    () => queryCourseId || initialRecord?.courseId || null
+  );
+  const [courseTitle, setCourseTitle] = useState<string | null>(
+    () => initialRecord?.courseTitle || null
+  );
 
   const [createdAt, setCreatedAt] = useState<string>(
     () => initialRecord?.createdAt || new Date().toISOString()
@@ -300,6 +310,8 @@ const LessonWorkspace: React.FC = () => {
 
     if (record) {
       const restored = resolveRestoredPlanState(record);
+      setCourseId(queryCourseId || record.courseId || null);
+      setCourseTitle(record.courseTitle || null);
       setCreatedAt(record.createdAt || new Date().toISOString());
       setLessonTitle(
         (restored.plan?.title && !record.titleManuallyEdited
@@ -340,6 +352,8 @@ const LessonWorkspace: React.FC = () => {
         initialPrompt: routePrompt,
       });
       setCreatedAt(created.createdAt);
+      setCourseId(queryCourseId || null);
+      setCourseTitle(null);
       setLessonTitle(created.title);
       setTitleManuallyEdited(false);
       setMessages([]);
@@ -390,9 +404,13 @@ const LessonWorkspace: React.FC = () => {
       activePlanId,
       initialPrompt: initialDraft || undefined,
       titleManuallyEdited,
+      courseId: courseId || undefined,
+      courseTitle: courseTitle || undefined,
     });
   }, [
     activePlanId,
+    courseId,
+    courseTitle,
     createdAt,
     currentPlan,
     initialDraft,
@@ -561,6 +579,65 @@ const LessonWorkspace: React.FC = () => {
     loadSources();
   }, [loadSources]);
 
+  // When opening a course lesson (/lesson/:id?courseId=...), hydrate latest plan from backend
+  useEffect(() => {
+    const activeCourseId = queryCourseId || courseId;
+    if (!activeCourseId || !sessionId) return;
+    let cancelled = false;
+
+    fetchCourse(activeCourseId)
+      .then((courseData) => {
+        if (cancelled) return;
+        lessonStore.writeCachedCourseDetail(courseData);
+        setCourseId(courseData.id);
+        setCourseTitle(courseData.title);
+        if (courseData.source_ids.length > 0) {
+          initialSelectionDone.current = true;
+          setSelectedSourceIds(courseData.source_ids);
+        }
+        const matchedLesson = courseData.lessons.find((l) => l.id === sessionId);
+        if (matchedLesson) {
+          lessonStore.syncCourseLessonWorkspace(courseData, matchedLesson);
+          setCurrentPlan(matchedLesson.plan);
+          setActivePlanId(`course-lesson-${matchedLesson.id}`);
+          if (!titleManuallyEdited && matchedLesson.plan?.title) {
+            setLessonTitle(matchedLesson.plan.title);
+          }
+          setSettings((prev) => ({
+            ...prev,
+            level: matchedLesson.plan?.level || prev.level,
+            duration_min:
+              matchedLesson.plan?.duration_min ||
+              matchedLesson.duration_min ||
+              prev.duration_min,
+            audience: matchedLesson.plan?.audience || prev.audience,
+            source_ids:
+              courseData.source_ids.length > 0
+                ? courseData.source_ids
+                : prev.source_ids,
+          }));
+          expandStudioPanel(40);
+          if ((location.state as { openStudio?: boolean } | null)?.openStudio) {
+            setMobileTab('studio');
+          }
+        }
+      })
+      .catch(() => {
+        // Fallback to cached lesson record if backend is unreachable
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    courseId,
+    expandStudioPanel,
+    location.state,
+    queryCourseId,
+    sessionId,
+    titleManuallyEdited,
+  ]);
+
   const handleToggleSource = (sourceId: string) => {
     setSelectedSourceIds((prev) =>
       prev.includes(sourceId)
@@ -659,6 +736,7 @@ const LessonWorkspace: React.FC = () => {
       const requestSettings: ChatSettings = {
         ...settings,
         source_ids: selectedSourceIds.length > 0 ? selectedSourceIds : null,
+        course_id: courseId || undefined,
       };
 
       try {
@@ -666,6 +744,7 @@ const LessonWorkspace: React.FC = () => {
           {
             session_id: sessionId,
             message: trimmed,
+            course_id: courseId || undefined,
             settings: requestSettings,
           },
           {
@@ -772,6 +851,7 @@ const LessonWorkspace: React.FC = () => {
       }
     },
     [
+      courseId,
       expandStudioPanel,
       isStreaming,
       latestSources,
@@ -829,6 +909,8 @@ const LessonWorkspace: React.FC = () => {
         sessionId={sessionId}
         plan={currentPlan}
         sourcesCount={sources.length}
+        courseId={courseId}
+        courseTitle={courseTitle}
       />
 
       {/* Mobile Navigation Tabs (< 768px): Sources | Chat | Studio */}
@@ -950,6 +1032,8 @@ const LessonWorkspace: React.FC = () => {
                   isCollapsed={false}
                   onToggleCollapse={() => {}}
                   scrollToTopSignal={studioScrollSignal}
+                  courseId={courseId}
+                  courseTitle={courseTitle}
                 />
               </div>
             </div>
@@ -1099,6 +1183,8 @@ const LessonWorkspace: React.FC = () => {
                   isCollapsed={rightCollapsed}
                   onToggleCollapse={collapseStudioPanel}
                   scrollToTopSignal={studioScrollSignal}
+                  courseId={courseId}
+                  courseTitle={courseTitle}
                 />
               </Panel>
             </Group>
@@ -1134,6 +1220,7 @@ export const App: React.FC = () => {
   return (
     <Routes>
       <Route path="/" element={<HomePage />} />
+      <Route path="/course/:id" element={<CoursePage />} />
       <Route path="/lesson/:id" element={<LessonWorkspace />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

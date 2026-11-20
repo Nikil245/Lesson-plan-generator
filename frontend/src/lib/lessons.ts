@@ -1,15 +1,23 @@
-import { ChatSettings, createSessionId, LessonPlan } from '../api/client';
+import {
+  ChatSettings,
+  CourseDetail,
+  CourseLesson,
+  CourseSummary,
+  createSessionId,
+  LessonPlan,
+} from '../api/client';
 import { ChatMessage } from '../components/ChatPanel';
 
 /**
- * NOTE: The backend currently stores chat session history only in process memory
- * (`SESSIONS` in `backend/app/chat.py`). Until a persistent backend session store
- * replaces it, this module persists lesson records (`messages`, `plan`, `settings`,
- * and metadata) in `localStorage` under `"lessonwright.lessons"` so users can browse,
- * reopen, rename, duplicate, and delete lessons from the Home library.
+ * Standalone lesson workspace sessions are persisted in `localStorage` under
+ * `"lessonwright.lessons"`. For courses, the backend SQLite database
+ * (`/courses`, `/courses/{id}`, `/courses/{id}/lessons`) is the source of truth
+ * and `localStorage` is used strictly as a fast client-side cache.
  */
 
 export const LESSONS_STORAGE_KEY = 'lessonwright.lessons';
+export const COURSES_CACHE_KEY = 'lessonwright.courses.cache';
+const COURSE_DETAIL_CACHE_PREFIX = 'lessonwright.course.cache.';
 
 export interface LessonSettings {
   level: string;
@@ -34,6 +42,11 @@ export interface LessonRecord {
   initialPrompt?: string;
   /** Tracks whether the user manually renamed the lesson so plan updates don't overwrite it */
   titleManuallyEdited?: boolean;
+  /** Optional link to a backend-tracked course and its generated lesson */
+  courseId?: string;
+  courseTitle?: string;
+  courseLessonId?: string;
+  courseLessonSeq?: number;
 }
 
 export const DEFAULT_LESSON_SETTINGS: ChatSettings = {
@@ -220,4 +233,118 @@ function deleteLesson(id: string): boolean {
 }
 
 export { deleteLesson as delete, deleteLesson as remove };
+
+// ---------------------------------------------------------------------------
+// Course cache helpers (backend is source of truth; localStorage is cache only)
+// ---------------------------------------------------------------------------
+
+export function readCachedCourses(): CourseSummary[] {
+  try {
+    const raw = window.localStorage.getItem(COURSES_CACHE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? (parsed as CourseSummary[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function writeCachedCourses(courses: CourseSummary[]): void {
+  try {
+    window.localStorage.setItem(COURSES_CACHE_KEY, JSON.stringify(courses));
+  } catch {
+    // Ignore storage quota or security errors
+  }
+}
+
+export function readCachedCourseDetail(courseId: string): CourseDetail | null {
+  try {
+    const raw = window.localStorage.getItem(
+      `${COURSE_DETAIL_CACHE_PREFIX}${courseId}`
+    );
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed.id === 'string'
+      ? (parsed as CourseDetail)
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+export function writeCachedCourseDetail(course: CourseDetail): void {
+  try {
+    window.localStorage.setItem(
+      `${COURSE_DETAIL_CACHE_PREFIX}${course.id}`,
+      JSON.stringify(course)
+    );
+    // Keep the summary list cache in sync when a single course is updated
+    const listCache = readCachedCourses();
+    const summary: CourseSummary = {
+      id: course.id,
+      title: course.title,
+      source_ids: course.source_ids,
+      created_at: course.created_at,
+      progress: course.progress,
+    };
+    const idx = listCache.findIndex((c) => c.id === course.id);
+    if (idx >= 0) {
+      listCache[idx] = summary;
+    } else {
+      listCache.unshift(summary);
+    }
+    writeCachedCourses(listCache);
+  } catch {
+    // Ignore storage quota or security errors
+  }
+}
+
+/**
+ * Sync a backend course lesson into the local workspace record cache so
+ * `/lesson/:id?courseId=:courseId` opens immediately with the plan & course context
+ * while preserving any existing chat history for that class.
+ */
+export function syncCourseLessonWorkspace(
+  course: Pick<CourseDetail, 'id' | 'title' | 'source_ids'>,
+  lesson: CourseLesson
+): LessonRecord {
+  const existing = get(lesson.id);
+  const now = new Date().toISOString();
+  const planId = existing?.activePlanId || `course-lesson-${lesson.id}`;
+
+  const record: LessonRecord = {
+    id: lesson.id,
+    title: lesson.plan?.title || lesson.title || `Class ${lesson.seq}`,
+    createdAt: existing?.createdAt || lesson.created_at || now,
+    updatedAt: now,
+    sourceCount: course.source_ids.length,
+    settings: {
+      level: lesson.plan?.level || existing?.settings?.level || 'beginner',
+      duration_min:
+        lesson.plan?.duration_min ||
+        lesson.duration_min ||
+        existing?.settings?.duration_min ||
+        60,
+      audience:
+        lesson.plan?.audience ||
+        existing?.settings?.audience ||
+        'university students',
+      objectives: existing?.settings?.objectives ?? [],
+      source_ids:
+        course.source_ids.length > 0
+          ? course.source_ids
+          : existing?.settings?.source_ids ?? null,
+    },
+    messages: existing?.messages || [],
+    plan: lesson.plan,
+    activePlanId: planId,
+    titleManuallyEdited: existing?.titleManuallyEdited ?? false,
+    courseId: course.id,
+    courseTitle: course.title,
+    courseLessonId: lesson.id,
+    courseLessonSeq: lesson.seq,
+  };
+
+  return save(record);
+}
 

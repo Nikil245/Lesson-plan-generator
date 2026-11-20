@@ -32,8 +32,9 @@ ENV EMBEDDING_MODEL=${EMBEDDING_MODEL}
 RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('${EMBEDDING_MODEL}')" && \
     chown -R appuser:appuser /app/.cache/huggingface
 
-# 3. Copy application code
+# 3. Copy application code and ensure writable SQLite DB directory for appuser
 COPY --chown=appuser:appuser app ./app
+RUN mkdir -p /app/data/db && chown appuser:appuser /app/data/db
 
 # Switch to non-root user before starting the server
 USER appuser
