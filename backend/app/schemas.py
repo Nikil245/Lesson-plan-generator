@@ -67,6 +67,9 @@ class LessonPlan(BaseModel):
     outline: list[OutlineItem] = Field(..., min_length=1)
     assessment: list[str] = Field(default_factory=list)
     further_reading: list[str] = Field(default_factory=list)
+    # Topics covered by this lesson and topics not yet covered (used in course lessons)
+    covered_topics: list[str] = Field(default_factory=list)
+    not_covered_yet: list[str] = Field(default_factory=list)
     # Filled in by our code from the retrieved chunks (not written by the LLM)
     citations: list[Citation] = Field(default_factory=list)
 
@@ -79,6 +82,7 @@ class ChatSettings(BaseModel):
     audience: str = Field("university students", examples=["undergraduate CS students"])
     objectives: list[str] = Field(default_factory=list, description="optional teacher goals")
     source_ids: list[str] | None = Field(None, description="optional: only use these sources")
+    course_id: str | None = Field(None, description="optional: active course id for progress queries")
 
 
 class ChatRequest(BaseModel):
@@ -86,6 +90,73 @@ class ChatRequest(BaseModel):
 
     session_id: str = Field("default", min_length=1)
     message: str = Field(..., min_length=1, examples=["few-shot prompting"])
+    course_id: str | None = Field(None, description="optional: active course id for progress queries")
     settings: ChatSettings = Field(default_factory=ChatSettings)
+
+
+# ---------------------------------------------------------------------------
+# Course & progress tracking schemas
+# ---------------------------------------------------------------------------
+TopicStatus = Literal["not_started", "planned", "taught"]
+LessonStatus = Literal["planned", "taught"]
+
+
+class SyllabusTopic(BaseModel):
+    """One teachable topic produced by the syllabus builder (validated via Pydantic)."""
+
+    title: str = Field(..., min_length=2)
+    summary: str = Field(..., min_length=5)
+    page_start: int = Field(..., ge=1)
+    page_end: int = Field(..., ge=1)
+    est_minutes: int = Field(..., ge=5, le=40)
+
+
+class CourseCreate(BaseModel):
+    """Body of POST /courses."""
+
+    title: str = Field(..., min_length=2, examples=["Prompt Engineering 101"])
+    source_ids: list[str] = Field(..., min_length=1, examples=[["2210-03629v3"]])
+
+
+class TopicCreate(BaseModel):
+    """Body of POST /courses/{id}/topics (teacher adds a topic manually)."""
+
+    title: str = Field(..., min_length=2)
+    summary: str = Field("", description="one-sentence description of the topic")
+    page_start: int = Field(..., ge=1)
+    page_end: int = Field(..., ge=1)
+    est_minutes: int = Field(15, ge=5, le=120)
+    position: int | None = Field(None, ge=1, description="optional 1-based position in syllabus")
+
+
+class TopicUpdate(BaseModel):
+    """Body of PATCH /courses/{id}/topics/{topic_id} (partial teacher edit)."""
+
+    title: str | None = Field(None, min_length=2)
+    summary: str | None = None
+    page_start: int | None = Field(None, ge=1)
+    page_end: int | None = Field(None, ge=1)
+    position: int | None = Field(None, ge=1)
+    est_minutes: int | None = Field(None, ge=5, le=120)
+    status: TopicStatus | None = None
+
+
+class CourseLessonCreate(BaseModel):
+    """Body of POST /courses/{id}/lessons."""
+
+    duration_min: int = Field(60, ge=10, le=240, description="lesson length in minutes")
+    level: str = Field("beginner", examples=["beginner", "intermediate", "advanced"])
+    audience: str = Field("university students", examples=["undergraduate CS students"])
+    objectives: list[str] = Field(default_factory=list, description="optional teacher goals")
+    topic_ids: list[str] | None = Field(
+        None,
+        description="optional explicit topic ids; if omitted, picks next not_started topics to fill ~85% of duration_min",
+    )
+
+
+class LessonStatusUpdate(BaseModel):
+    """Body of PATCH /courses/{id}/lessons/{lesson_id}."""
+
+    status: LessonStatus
 
 

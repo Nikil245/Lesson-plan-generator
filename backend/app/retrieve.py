@@ -18,15 +18,60 @@ from app.store import embed_query, get_collection
 DEFAULT_K = 6
 
 
-def retrieve(query: str, k: int = DEFAULT_K, source_ids: list[str] | None = None) -> list[dict]:
+def _merge_page_ranges(page_ranges: list[tuple[int, int]]) -> list[tuple[int, int]]:
+    """Collapse overlapping or adjacent (start, end) ranges to simplify Chroma's filter."""
+    cleaned = sorted((min(s, e), max(s, e)) for s, e in page_ranges)
+    merged: list[tuple[int, int]] = []
+    for start, end in cleaned:
+        if merged and start <= merged[-1][1] + 1:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], end))
+        else:
+            merged.append((start, end))
+    return merged
+
+
+def _build_where_filter(
+    source_ids: list[str] | None,
+    page_ranges: list[tuple[int, int]] | None,
+) -> dict | None:
+    """
+    Build a Chroma `where` filter for optional source_ids and page_ranges.
+    When page_ranges is None, returns the exact same filter as before.
+    """
+    clauses: list[dict] = []
+    if source_ids:
+        clauses.append({"source_id": {"$in": source_ids}})
+
+    if page_ranges:
+        merged = _merge_page_ranges(page_ranges)
+        range_clauses = [
+            {"page": start} if start == end
+            else {"$and": [{"page": {"$gte": start}}, {"page": {"$lte": end}}]}
+            for start, end in merged
+        ]
+        clauses.append(range_clauses[0] if len(range_clauses) == 1 else {"$or": range_clauses})
+
+    if not clauses:
+        return None
+    return clauses[0] if len(clauses) == 1 else {"$and": clauses}
+
+
+def retrieve(
+    query: str,
+    k: int = DEFAULT_K,
+    source_ids: list[str] | None = None,
+    page_ranges: list[tuple[int, int]] | None = None,
+) -> list[dict]:
     """
     Return the `k` chunks most similar to `query`, best first.
 
     Args:
-        query:      the user's question or topic.
-        k:          how many chunks to return.
-        source_ids: optional list of source ids; if given, only chunks from
-                    these documents are searched.
+        query:       the user's question or topic.
+        k:           how many chunks to return.
+        source_ids:  optional list of source ids; if given, only chunks from
+                     these documents are searched.
+        page_ranges: optional list of inclusive (page_start, page_end) tuples;
+                     if given, only chunks inside those pages are searched.
 
     Each result is a dict with: text, score, source_id, title, url, page,
     chunk_index. `score` is cosine similarity in [0, 1] (higher = more similar).
@@ -36,12 +81,20 @@ def retrieve(query: str, k: int = DEFAULT_K, source_ids: list[str] | None = None
     if total == 0 or not query.strip():
         return []  # nothing ingested yet, or empty query
 
-    # Optional metadata filter: "source_id must be one of these values"
-    where = {"source_id": {"$in": source_ids}} if source_ids else None
+    where = _build_where_filter(source_ids, page_ranges)
+
+    # When restricting to narrow page ranges, clamp n_results to the number of
+    # matching chunks so Chroma never raises an error for asking more than exist.
+    n_results = min(k, total)
+    if page_ranges:
+        matching = len(collection.get(where=where, include=[])["ids"])
+        if matching == 0:
+            return []
+        n_results = min(k, matching)
 
     results = collection.query(
         query_embeddings=[embed_query(query)],
-        n_results=min(k, total),  # cannot ask for more chunks than exist
+        n_results=n_results,
         where=where,
         include=["documents", "metadatas", "distances"],
     )

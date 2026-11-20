@@ -11,6 +11,10 @@ venv/
 # Local vector database (rebuilt by running ingestion)
 chroma_db/
 
+# Local SQLite database for courses and progress tracking
+data/lessonwright.db
+data/lessonwright.db-*
+
 # Editors / OS
 .vscode/
 .idea/

@@ -25,6 +25,7 @@ from collections.abc import Iterator
 from groq import APIConnectionError, AuthenticationError, Groq, RateLimitError
 
 from app.config import settings
+from app.db import get_course
 from app.generate import (
     RETRIEVE_K,
     TEMPERATURE,
@@ -67,6 +68,7 @@ def get_session(session_id: str) -> dict:
             "plan": None,       # latest LessonPlan object (or None)
             "chunks": [],       # chunks behind the current plan (reused for refinements)
             "source_ids": None,
+            "course_id": None,  # optional active course for progress questions
         }
     return SESSIONS[session_id]
 
@@ -77,6 +79,7 @@ def get_session_state(session_id: str) -> dict:
     plan: LessonPlan | None = session["plan"]
     return {
         "session_id": session_id,
+        "course_id": session["course_id"],
         "history": session["history"],
         "plan": plan.model_dump() if plan else None,
     }
@@ -483,11 +486,98 @@ def stream_plan(chat_request: ChatRequest, session: dict, intent: str) -> Iterat
     yield sse_event("plan", {"data": plan.model_dump()})
 
 
+# Progress questions answered directly from SQLite when a session has a course_id
+PROGRESS_QUESTION_PATTERN = re.compile(
+    r"\b("
+    r"how much\b.{0,30}\b(covered|done|completed|taught|finished|left|remaining|pending)"
+    r"|how far\b.{0,20}\b(are we|along|in the course|have we)"
+    r"|how many topics\b.{0,25}\b(covered|taught|planned|left|remaining|pending)"
+    r"|(?:course|my|our|current)\s+progress\b"
+    r"|progress\s+(?:report|status|summary|so far)\b"
+    r"|what(?:'s| is| are)\s+(?:pending|left|remaining|next|coming up|not covered|uncovered)"
+    r"|what\s+(?:comes|is up|should (?:i|we) (?:teach|cover))\s+next"
+    r"|(?:pending|remaining|uncovered|next)\s+topics?\b"
+    r"|where\s+(?:did we stop|are we in the course)"
+    r")\b",
+    re.IGNORECASE,
+)
+
+
+def is_progress_question(message: str) -> bool:
+    """Return True if the user is asking about course coverage, pending work, or next topics."""
+    text = normalize(message)
+    if NEW_PLAN_PATTERN.search(text):
+        return False
+    return bool(PROGRESS_QUESTION_PATTERN.search(text))
+
+
+def format_course_progress_reply(course: dict) -> str:
+    """Format a clear answer directly from SQLite progress data (no vector retrieval)."""
+    prog = course["progress"]
+    topics = course["topics"]
+    not_started = prog["topics_total"] - prog["planned"] - prog["taught"]
+    planned_titles = [t["title"] for t in topics if t["status"] == "planned"]
+
+    lines = [
+        f"**{course['title']} — Course Progress**",
+        f"- **Covered (taught):** {prog['taught']}/{prog['topics_total']} topics "
+        f"({prog['percent_topics']}% of topics, {prog['percent_pages']}% of pages)",
+        f"- **Planned (not yet taught):** {prog['planned']} topics"
+        + (f" ({', '.join(planned_titles)})" if planned_titles else ""),
+        f"- **Pending (not started):** {not_started} topics",
+    ]
+
+    next_topics = prog["next_topics"]
+    if next_topics:
+        lines.append("\n**Next topics to cover:**")
+        for i, t in enumerate(next_topics, start=1):
+            lines.append(
+                f"{i}. **{t['title']}** (pp. {t['page_start']}–{t['page_end']}, ~{t['est_minutes']} min)"
+            )
+    else:
+        lines.append("\nAll syllabus topics have already been planned or taught.")
+
+    return "\n".join(lines)
+
+
+def stream_course_progress(chat_request: ChatRequest, session: dict, course_id: str) -> Iterator[str]:
+    """Answer a course progress question from SQLite without touching Chroma retrieval."""
+    course = get_course(course_id)
+    if course is None:
+        raise ValueError(f"Course '{course_id}' was not found.")
+
+    yield sse_event("status", {"step": "Checking course progress"})
+    yield sse_event("status", {"step": "Writing answer"})
+    yield sse_event("sources", {"items": []})
+
+    reply = format_course_progress_reply(course)
+    for token in stream_words(reply):
+        yield sse_event("token", {"text": token})
+
+    append_turn(session, chat_request.message, reply)
+
+
 def stream_chat(chat_request: ChatRequest) -> Iterator[str]:
     """Classify the message, then run the answer or plan pipeline as SSE events."""
     intent = INTENT_ANSWER
     try:
         session = get_session(chat_request.session_id)
+        # Remember course_id on the session if provided on either request or settings
+        incoming_course_id = chat_request.course_id or chat_request.settings.course_id
+        if incoming_course_id:
+            session["course_id"] = incoming_course_id
+
+        # If this session is linked to a course and the user asks about progress,
+        # answer directly from SQLite progress data instead of vector retrieval.
+        if session["course_id"] and is_progress_question(chat_request.message):
+            log.info(
+                "[chat] session=%s course_id=%s intent=answer (via course_progress) message=%r",
+                chat_request.session_id, session["course_id"], chat_request.message[:120],
+            )
+            yield from stream_course_progress(chat_request, session, session["course_id"])
+            yield sse_event("done", {"intent": INTENT_ANSWER})
+            return
+
         current_plan: LessonPlan | None = session["plan"]
         intent, how = classify_message(
             chat_request.message,

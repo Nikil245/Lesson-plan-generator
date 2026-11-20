@@ -31,6 +31,7 @@ class Settings:
     # Storage paths (relative paths are resolved against the backend folder)
     CHROMA_DIR: Path = BASE_DIR / os.getenv("CHROMA_DIR", "chroma_db")
     SOURCES_DIR: Path = BASE_DIR / os.getenv("SOURCES_DIR", "data/sources")
+    DB_PATH: Path = BASE_DIR / os.getenv("DB_PATH", "data/lessonwright.db")
 
     # CORS
     FRONTEND_ORIGIN: str = os.getenv("FRONTEND_ORIGIN", "http://localhost:5173")

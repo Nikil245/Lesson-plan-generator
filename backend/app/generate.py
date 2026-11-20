@@ -116,9 +116,43 @@ Respond with a single JSON object, no markdown, with exactly these keys:
 }"""
 
 
-def build_user_message(request: LessonRequest, context: str) -> str:
+def build_user_message(
+    request: LessonRequest,
+    context: str,
+    course_context: dict | None = None,
+) -> str:
     """The per-request message: numbered context first, then the teacher's request."""
     objectives = "\n".join(f"- {o}" for o in request.objectives) or "- (none given: derive 3-4 from the context)"
+    course_block = ""
+    if course_context:
+        assigned_lines = "\n".join(
+            f"  {i}. {t['title']} (pages {t['page_start']}-{t['page_end']}, ~{t['est_minutes']} min): {t['summary']}"
+            for i, t in enumerate(course_context["topics"], start=1)
+        )
+        prev = course_context.get("previous_lesson")
+        if prev:
+            prev_topics = ", ".join(prev["covered_topics"]) or "the previous material"
+            recap_rule = (
+                f"Previous lesson: \"{prev['title']}\" (covered: {prev_topics}).\n"
+                f"Start the lesson outline with a brief 2-3 sentence recap connecting those previous topics to today's topics."
+            )
+        else:
+            recap_rule = "This is Lesson 1 of the course (no prior lesson recap needed)."
+
+        not_covered = course_context.get("not_covered_yet") or []
+        stop_lines = "\n".join(f"  - {t}" for t in not_covered) or "  - (none: this finishes the course)"
+        course_block = (
+            f"\n---\nCOURSE SEQUENCE RULES:\n"
+            f"Course: {course_context['course_title']} (Lesson {course_context['lesson_seq']})\n"
+            f"Assigned topics (the outline MUST cover EXACTLY these topics in this exact order):\n"
+            f"{assigned_lines}\n"
+            f"{recap_rule}\n"
+            f"Topics NOT covered yet (STOP before these; do NOT include them in this lesson):\n"
+            f"{stop_lines}\n"
+            f'Also include "covered_topics" (exact titles of the assigned topics) and '
+            f'"not_covered_yet" (remaining topic titles) in the JSON object.\n'
+        )
+
     return (
         f"CONTEXT:\n{context}\n\n"
         f"---\nLESSON REQUEST:\n"
@@ -126,7 +160,8 @@ def build_user_message(request: LessonRequest, context: str) -> str:
         f"Level: {request.level}\n"
         f"Audience: {request.audience}\n"
         f"duration_min: {request.duration_min}\n"
-        f"Teacher's objectives:\n{objectives}\n\n"
+        f"Teacher's objectives:\n{objectives}\n"
+        f"{course_block}\n"
         f"Return the lesson plan as JSON."
     )
 
@@ -259,10 +294,11 @@ def generate_from_chunks(
     chunks: list[dict],
     history: list[dict] | None = None,
     current_plan: LessonPlan | None = None,
+    course_context: dict | None = None,
 ) -> LessonPlan:
     """
     Generate a new plan (or refine `current_plan`) from already-retrieved chunks.
-    Shared by POST /lesson-plan and POST /chat.
+    Shared by POST /lesson-plan, POST /chat, and POST /courses/{id}/lessons.
     """
     if not chunks:
         raise ValueError("No usable source material found for this topic. Ingest documents or change the source filter.")
@@ -271,7 +307,7 @@ def generate_from_chunks(
     user_msg = (
         build_refinement_message(request, context, current_plan)
         if current_plan is not None
-        else build_user_message(request, context)
+        else build_user_message(request, context, course_context=course_context)
     )
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
@@ -309,6 +345,9 @@ def generate_from_chunks(
     plan.audience = request.audience
     plan.duration_min = request.duration_min
     plan.citations = build_citations(plan, chunks)
+    if course_context is not None:
+        plan.covered_topics = [t["title"] for t in course_context["topics"]]
+        plan.not_covered_yet = list(course_context.get("not_covered_yet", []))
     return plan
 
 
